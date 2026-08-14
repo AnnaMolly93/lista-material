@@ -6,7 +6,6 @@ import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalSumm
 import {
   ApiError,
   createEnxoval,
-  createCategory,
   createItem,
   deleteEnxoval,
   deleteItem,
@@ -23,7 +22,6 @@ import {
 type AuthMode = 'login' | 'register';
 type MaterialForm = {
   name: string;
-  type: string;
   plannedQuantity: string;
   minPrice: string;
   maxPrice: string;
@@ -77,7 +75,7 @@ function itemMax(item: EnxovalItem) {
 }
 
 function blankMaterial(): MaterialForm {
-  return { name: '', type: '', plannedQuantity: '1', minPrice: '', maxPrice: '', link: '', description: '' };
+  return { name: '', plannedQuantity: '1', minPrice: '', maxPrice: '', link: '', description: '' };
 }
 
 function Dialog({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
@@ -276,7 +274,6 @@ export default function App() {
     setEditingMaterial(item);
     setMaterial({
       name: item.name,
-      type: item.category === 'Sem tipo' ? '' : item.category,
       plannedQuantity: String(item.plannedQuantity),
       minPrice: moneyInput(itemMin(item)),
       maxPrice: itemMax(item) === itemMin(item) ? '' : moneyInput(itemMax(item)),
@@ -298,25 +295,16 @@ export default function App() {
     }
     setSubmitting(true);
     try {
-      const typeName = material.type.trim();
       if (editingMaterial) {
-        const desiredType = typeName || 'Sem tipo';
-        let category = categories.find(candidate => candidate.name.toLowerCase() === desiredType.toLowerCase());
-        if (!category) {
-          category = await createCategory(activeSubject.id, desiredType);
-          setCategories(current => [...current, category!]);
-        }
         await updateItem(editingMaterial.id, {
-          name: material.name.trim(), link: material.link.trim(), description: material.description.trim(), categoryId: category.id,
+          name: material.name.trim(), link: material.link.trim(), description: material.description.trim(), categoryId: editingMaterial.categoryId,
           plannedQuantity, acquiredQuantity: Math.min(editingMaterial.acquiredQuantity, plannedQuantity),
           estimatedMinUnitPriceCents: min, estimatedMaxUnitPriceCents: max
         });
         applyWorkspace(await fetchEnxoval(activeSubject.id));
       } else {
-        const existing = categories.find(category => category.name.toLowerCase() === typeName.toLowerCase());
         const result = await createItem({
-          enxovalId: activeSubject.id, name: material.name.trim(), categoryId: existing?.id,
-          categoryName: typeName || undefined, link: material.link.trim(), description: material.description.trim(),
+          enxovalId: activeSubject.id, name: material.name.trim(), link: material.link.trim(), description: material.description.trim(),
           plannedQuantity, estimatedMinUnitPriceCents: min, estimatedMaxUnitPriceCents: max
         });
         setItems(current => [...current, result.item]);
@@ -366,20 +354,20 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-stone-50 pb-12 text-stone-800">
-      <header className="border-b border-stone-200 bg-white px-4 py-6 shadow-sm sm:px-8">
+      <header className="border-b border-stone-200 bg-white px-4 py-4 shadow-sm sm:px-8 sm:py-6">
         <div className="mx-auto max-w-6xl">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div><div className="mb-1 flex items-center gap-2 text-brand-wood"><Tooth size={20} /><span className="text-xs font-bold uppercase tracking-widest">Lista de Material</span></div><h1 className="font-serif text-3xl font-bold text-stone-900">{activeSubject?.name ?? 'Minhas matérias'}</h1></div>
-            <button type="button" onClick={() => void signOut()} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-500 hover:bg-stone-100"><LogOut size={16} /> Sair</button>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0"><div className="mb-1 flex items-center gap-2 text-brand-wood"><Tooth size={20} /><span className="text-xs font-bold uppercase tracking-widest">Lista de Material</span></div><h1 className="truncate font-serif text-2xl font-bold text-stone-900 sm:text-3xl">{activeSubject?.name ?? 'Minhas matérias'}</h1></div>
+            <button type="button" onClick={() => void signOut()} className="inline-flex shrink-0 items-center gap-2 rounded-lg px-2 py-2 text-sm text-stone-500 hover:bg-stone-100 sm:px-3"><LogOut size={16} /><span className="hidden sm:inline">Sair</span></button>
           </div>
-          <div className="mt-5 flex flex-wrap items-center gap-2">
-            <select value={activeSubject?.id ?? ''} onChange={event => void switchSubject(event.target.value)} className="min-w-52 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm">
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:flex sm:flex-wrap sm:items-center">
+            <select value={activeSubject?.id ?? ''} onChange={event => void switchSubject(event.target.value)} className="col-span-2 w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm sm:w-auto sm:min-w-52 sm:py-2">
               {subjects.length === 0 && <option value="">Nenhuma matéria</option>}
               {subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
             </select>
-            <button type="button" onClick={() => setCreateSubjectOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-brand-dark px-3 py-2 text-sm font-semibold text-white"><Plus size={16} /> Nova matéria</button>
+            <button type="button" onClick={() => setCreateSubjectOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-dark px-3 py-2.5 text-sm font-semibold text-white sm:py-2"><Plus size={16} /> Nova matéria</button>
             <input ref={excelInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event => void selectExcelFile(event)} className="sr-only" />
-            <button type="button" onClick={() => excelInputRef.current?.click()} disabled={submitting} className="inline-flex items-center gap-2 rounded-lg border border-brand-beige bg-white px-3 py-2 text-sm font-semibold text-brand-dark disabled:opacity-50"><Upload size={16} /> Importar Excel</button>
+            <button type="button" onClick={() => excelInputRef.current?.click()} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-lg border border-brand-beige bg-white px-3 py-2.5 text-sm font-semibold text-brand-dark disabled:opacity-50 sm:py-2"><Upload size={16} /> Importar Excel</button>
           </div>
         </div>
       </header>
@@ -390,12 +378,12 @@ export default function App() {
           <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center"><BookOpen className="mx-auto mb-3 text-brand-wood" size={44} /><h2 className="font-serif text-2xl font-bold">Crie sua primeira matéria</h2><p className="mt-2 text-stone-500">Comece vazia ou envie uma planilha Excel com seus materiais.</p></div>
         ) : (
           <>
-            <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <section className="mb-5 grid grid-cols-2 gap-3 sm:mb-6 lg:grid-cols-5">
               <Metric label="Previsto" value={formatRange(stats.plannedMin, stats.plannedMax)} />
               <Metric label="Adquirido / pago" value={formatRange(stats.paidMin, stats.paidMax)} tone="text-emerald-700" />
               <Metric label="Falta adquirir" value={formatRange(stats.remainingMin, stats.remainingMax)} />
               <Metric label="Limite da matéria" value={budget ? currency.format(budget / 100) : 'Não definido'} tone={overBudget ? 'text-red-700' : undefined} />
-              <button type="button" onClick={() => { setBudgetText(moneyInput(budget)); setBudgetOpen(true); }} className="rounded-xl border border-stone-200 bg-white p-4 text-left shadow-sm hover:border-brand-beige"><span className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-stone-400"><WalletCards size={14} /> Saldo do limite</span><strong className={`block text-lg ${budget ? 'text-stone-900' : 'text-brand-wood'}`}>{budget ? currency.format(budgetRemaining / 100) : 'Definir limite'}</strong></button>
+              <button type="button" onClick={() => { setBudgetText(moneyInput(budget)); setBudgetOpen(true); }} className="col-span-2 rounded-xl border border-stone-200 bg-white p-3 text-left shadow-sm hover:border-brand-beige sm:p-4 lg:col-span-1"><span className="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-stone-400 sm:text-xs"><WalletCards size={14} /> Saldo do limite</span><strong className={`block text-base sm:text-lg ${budget ? 'text-stone-900' : 'text-brand-wood'}`}>{budget ? currency.format(budgetRemaining / 100) : 'Definir limite'}</strong></button>
             </section>
             {overBudget && <p className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">O valor máximo previsto ultrapassa o limite definido para esta matéria.</p>}
             <section className="mb-5 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
@@ -403,10 +391,48 @@ export default function App() {
               <div className="mt-4 h-3 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-brand-wood transition-all" style={{ width: `${stats.progress}%` }} /></div>
             </section>
             <section className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 p-4"><div><h2 className="font-serif text-xl font-bold">Materiais</h2><p className="text-sm text-stone-500">{items.length} itens cadastrados</p></div><div className="flex gap-2"><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar material" className="input w-44 sm:w-56" /><button type="button" onClick={openNewMaterial} className="inline-flex items-center gap-2 rounded-lg bg-brand-dark px-3 py-2 text-sm font-semibold text-white"><Plus size={16} /> Material</button></div></div>
-              <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-3">Material</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3 text-center">Quantidade</th><th className="px-4 py-3">Estimativa un.</th><th className="px-4 py-3">Total estimado</th><th className="px-4 py-3">Ações</th></tr></thead><tbody className="divide-y divide-stone-100">
-                {filteredItems.map(item => <tr key={item.id} className={item.checked ? 'bg-emerald-50/40' : ''}><td className="max-w-xs px-4 py-3 font-medium text-stone-800"><span className={item.checked ? 'line-through text-stone-400' : ''}>{item.name}</span>{item.description && <p className="mt-1 truncate text-xs font-normal text-stone-400">{item.description}</p>}</td><td className="px-4 py-3"><span className="rounded-full bg-stone-100 px-2 py-1 text-xs font-medium text-stone-600">{item.category}</span></td><td className="px-4 py-3"><div className="flex items-center justify-center gap-2"><button type="button" aria-label="Diminuir quantidade adquirida" onClick={() => void changeAcquired(item, -1)} disabled={item.acquiredQuantity === 0} className="rounded-full border border-stone-200 p-1 text-stone-600 disabled:opacity-30"><Minus size={14} /></button><span className="min-w-10 text-center font-bold">{item.acquiredQuantity}/{item.plannedQuantity}</span><button type="button" aria-label="Adicionar quantidade adquirida" onClick={() => void changeAcquired(item, 1)} disabled={item.acquiredQuantity >= item.plannedQuantity} className="rounded-full bg-brand-wood p-1 text-white disabled:opacity-30"><Plus size={14} /></button></div></td><td className="px-4 py-3 text-stone-700">{formatRange(itemMin(item), itemMax(item))}</td><td className="px-4 py-3 font-semibold text-brand-dark">{formatRange(item.plannedQuantity * itemMin(item), item.plannedQuantity * itemMax(item))}</td><td className="px-4 py-3"><div className="flex gap-1">{item.link && <a href={item.link.startsWith('http') ? item.link : `https://${item.link}`} target="_blank" rel="noreferrer" className="rounded-md p-1.5 text-brand-wood hover:bg-brand-beige/20" title="Abrir link"><ExternalLink size={16} /></a>}<button onClick={() => openEditMaterial(item)} className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100" title="Editar"><Pencil size={16} /></button><button onClick={() => void removeMaterial(item)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" title="Remover"><Trash2 size={16} /></button></div></td></tr>)}
-                {filteredItems.length === 0 && <tr><td colSpan={6} className="px-4 py-12 text-center text-stone-500">Nenhum material encontrado.</td></tr>}
+              <div className="border-b border-stone-100 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><h2 className="font-serif text-xl font-bold">Materiais</h2><p className="text-sm text-stone-500">{items.length} itens cadastrados</p></div>
+                  <button type="button" onClick={openNewMaterial} className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-brand-dark px-3 py-2.5 text-sm font-semibold text-white"><Plus size={16} /> Material</button>
+                </div>
+                <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar material" className="input mt-3 sm:max-w-sm" />
+              </div>
+
+              <div className="divide-y divide-stone-100 md:hidden">
+                {filteredItems.map(item => (
+                  <article key={item.id} className={`p-4 ${item.checked ? 'bg-emerald-50/50' : 'bg-white'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <h3 className={`text-[15px] font-semibold leading-5 ${item.checked ? 'text-stone-400 line-through' : 'text-stone-900'}`}>{item.name}</h3>
+                        {item.description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-stone-500">{item.description}</p>}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        {item.link && <a href={item.link.startsWith('http') ? item.link : `https://${item.link}`} target="_blank" rel="noreferrer" aria-label="Abrir link" className="rounded-lg bg-stone-50 p-2 text-brand-wood"><ExternalLink size={17} /></a>}
+                        <button type="button" onClick={() => openEditMaterial(item)} aria-label="Editar material" className="rounded-lg bg-stone-50 p-2 text-stone-500"><Pencil size={17} /></button>
+                        <button type="button" onClick={() => void removeMaterial(item)} aria-label="Remover material" className="rounded-lg bg-red-50 p-2 text-red-600"><Trash2 size={17} /></button>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-stone-50 p-3">
+                      <div><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Valor unitário</span><strong className="mt-1 block text-sm text-stone-700">{formatRange(itemMin(item), itemMax(item))}</strong></div>
+                      <div className="text-right"><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Total estimado</span><strong className="mt-1 block text-sm text-brand-dark">{formatRange(item.plannedQuantity * itemMin(item), item.plannedQuantity * itemMax(item))}</strong></div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-stone-500">Quantidade adquirida</span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" aria-label="Diminuir quantidade adquirida" onClick={() => void changeAcquired(item, -1)} disabled={item.acquiredQuantity === 0} className="rounded-full border border-stone-200 bg-white p-2 text-stone-600 disabled:opacity-30"><Minus size={15} /></button>
+                        <span className="min-w-12 text-center text-sm font-bold">{item.acquiredQuantity} / {item.plannedQuantity}</span>
+                        <button type="button" aria-label="Adicionar quantidade adquirida" onClick={() => void changeAcquired(item, 1)} disabled={item.acquiredQuantity >= item.plannedQuantity} className="rounded-full bg-brand-wood p-2 text-white disabled:opacity-30"><Plus size={15} /></button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+                {filteredItems.length === 0 && <p className="px-4 py-12 text-center text-stone-500">Nenhum material encontrado.</p>}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block"><table className="min-w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-3">Material</th><th className="px-4 py-3 text-center">Quantidade</th><th className="px-4 py-3">Estimativa un.</th><th className="px-4 py-3">Total estimado</th><th className="px-4 py-3">Ações</th></tr></thead><tbody className="divide-y divide-stone-100">
+                {filteredItems.map(item => <tr key={item.id} className={item.checked ? 'bg-emerald-50/40' : ''}><td className="max-w-xs px-4 py-3 font-medium text-stone-800"><span className={item.checked ? 'line-through text-stone-400' : ''}>{item.name}</span>{item.description && <p className="mt-1 truncate text-xs font-normal text-stone-400">{item.description}</p>}</td><td className="px-4 py-3"><div className="flex items-center justify-center gap-2"><button type="button" aria-label="Diminuir quantidade adquirida" onClick={() => void changeAcquired(item, -1)} disabled={item.acquiredQuantity === 0} className="rounded-full border border-stone-200 p-1 text-stone-600 disabled:opacity-30"><Minus size={14} /></button><span className="min-w-10 text-center font-bold">{item.acquiredQuantity}/{item.plannedQuantity}</span><button type="button" aria-label="Adicionar quantidade adquirida" onClick={() => void changeAcquired(item, 1)} disabled={item.acquiredQuantity >= item.plannedQuantity} className="rounded-full bg-brand-wood p-1 text-white disabled:opacity-30"><Plus size={14} /></button></div></td><td className="px-4 py-3 text-stone-700">{formatRange(itemMin(item), itemMax(item))}</td><td className="px-4 py-3 font-semibold text-brand-dark">{formatRange(item.plannedQuantity * itemMin(item), item.plannedQuantity * itemMax(item))}</td><td className="px-4 py-3"><div className="flex gap-1">{item.link && <a href={item.link.startsWith('http') ? item.link : `https://${item.link}`} target="_blank" rel="noreferrer" className="rounded-md p-1.5 text-brand-wood hover:bg-brand-beige/20" title="Abrir link"><ExternalLink size={16} /></a>}<button onClick={() => openEditMaterial(item)} className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100" title="Editar"><Pencil size={16} /></button><button onClick={() => void removeMaterial(item)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" title="Remover"><Trash2 size={16} /></button></div></td></tr>)}
+                {filteredItems.length === 0 && <tr><td colSpan={5} className="px-4 py-12 text-center text-stone-500">Nenhum material encontrado.</td></tr>}
               </tbody></table></div>
             </section>
           </>
@@ -414,13 +440,13 @@ export default function App() {
       </section>
 
       {isCreateSubjectOpen && <Dialog title="Nova matéria" onClose={() => setCreateSubjectOpen(false)}><form onSubmit={createSubject} className="space-y-4 p-5"><Field label="Nome da Matéria"><input value={subjectName} onChange={event => setSubjectName(event.target.value)} placeholder="Ex.: Cirurgia" className="input" autoFocus /></Field><button disabled={submitting || !subjectName.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">Criar matéria</button></form></Dialog>}
-      {isImportOpen && excelImport && <Dialog title="Importar planilha" onClose={() => setImportOpen(false)}><form onSubmit={confirmExcelImport} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><div className="flex items-start gap-3 rounded-xl bg-stone-50 p-3"><FileSpreadsheet className="mt-0.5 shrink-0 text-brand-wood" size={22} /><div className="min-w-0"><p className="truncate text-sm font-semibold text-stone-800">{excelImport.fileName}</p><p className="text-sm text-stone-500">{excelImport.materials.length} materiais encontrados</p></div></div><Field label="Nome da matéria"><input value={excelImport.subjectName} onChange={event => setExcelImport({ ...excelImport, subjectName: event.target.value })} className="input" autoFocus /></Field><div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-400">Prévia</p><div className="overflow-hidden rounded-xl border border-stone-200"><table className="w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase text-stone-500"><tr><th className="px-3 py-2">Material</th><th className="px-3 py-2">Tipo</th><th className="px-3 py-2 text-center">Qtd.</th></tr></thead><tbody className="divide-y divide-stone-100">{excelImport.materials.slice(0, 5).map((item, index) => <tr key={`${item.name}-${index}`}><td className="px-3 py-2">{item.name}</td><td className="px-3 py-2 text-stone-500">{item.categoryName}</td><td className="px-3 py-2 text-center">{item.plannedQuantity}</td></tr>)}</tbody></table></div>{excelImport.materials.length > 5 && <p className="mt-2 text-xs text-stone-500">E mais {excelImport.materials.length - 5} materiais.</p>}</div><p className="text-xs leading-5 text-stone-500">A planilha deve ter a coluna <strong>Material</strong>. Também reconhecemos: Tipo, Quantidade, Quantidade adquirida, Valor mínimo, Valor máximo, Link e Observações.</p><button disabled={submitting || !excelImport.subjectName.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Importando...' : 'Criar lista com estes materiais'}</button></form></Dialog>}
+      {isImportOpen && excelImport && <Dialog title="Importar planilha" onClose={() => setImportOpen(false)}><form onSubmit={confirmExcelImport} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><div className="flex items-start gap-3 rounded-xl bg-stone-50 p-3"><FileSpreadsheet className="mt-0.5 shrink-0 text-brand-wood" size={22} /><div className="min-w-0"><p className="truncate text-sm font-semibold text-stone-800">{excelImport.fileName}</p><p className="text-sm text-stone-500">{excelImport.materials.length} materiais encontrados</p></div></div><Field label="Nome da matéria"><input value={excelImport.subjectName} onChange={event => setExcelImport({ ...excelImport, subjectName: event.target.value })} className="input" autoFocus /></Field><div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-400">Prévia</p><div className="overflow-hidden rounded-xl border border-stone-200"><table className="w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase text-stone-500"><tr><th className="px-3 py-2">Material</th><th className="px-3 py-2 text-center">Qtd.</th></tr></thead><tbody className="divide-y divide-stone-100">{excelImport.materials.slice(0, 5).map((item, index) => <tr key={`${item.name}-${index}`}><td className="px-3 py-2">{item.name}</td><td className="px-3 py-2 text-center">{item.plannedQuantity}</td></tr>)}</tbody></table></div>{excelImport.materials.length > 5 && <p className="mt-2 text-xs text-stone-500">E mais {excelImport.materials.length - 5} materiais.</p>}</div><p className="text-xs leading-5 text-stone-500">A planilha deve ter a coluna <strong>Material</strong>. Também reconhecemos: Quantidade, Quantidade adquirida, Valor mínimo, Valor máximo, Link e Observações.</p><button disabled={submitting || !excelImport.subjectName.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Importando...' : 'Criar lista com estes materiais'}</button></form></Dialog>}
       {isBudgetOpen && <Dialog title="Limite de orçamento" onClose={() => setBudgetOpen(false)}><form onSubmit={saveBudget} className="space-y-4 p-5"><p className="text-sm text-stone-500">Defina o teto de gastos desta matéria. Deixe vazio para remover o limite.</p><Field label="Limite"><input inputMode="numeric" value={budgetText} onChange={event => setBudgetText(moneyInput(centsFromInput(event.target.value)))} placeholder="R$ 0,00" className="input" autoFocus /></Field><button disabled={submitting} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white">Salvar limite</button></form></Dialog>}
-      {isMaterialOpen && <Dialog title={editingMaterial ? 'Editar material' : 'Novo material'} onClose={() => setMaterialOpen(false)}><form onSubmit={saveMaterial} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><Field label="Material"><input value={material.name} onChange={event => setMaterial({ ...material, name: event.target.value })} placeholder="Ex.: Livro de anatomia" className="input" autoFocus /></Field><Field label="Tipo de material"><input list="types" value={material.type} onChange={event => setMaterial({ ...material, type: event.target.value })} placeholder="Ex.: Instrumental" className="input" /><datalist id="types">{categories.filter(category => category.name !== 'Sem tipo').map(category => <option key={category.id} value={category.name} />)}</datalist></Field><Field label="Quantidade necessária"><input type="number" min="1" value={material.plannedQuantity} onChange={event => setMaterial({ ...material, plannedQuantity: event.target.value })} className="input" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Valor mínimo (un.)"><input inputMode="numeric" value={material.minPrice} onChange={event => setMaterial({ ...material, minPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="R$ 0,00" className="input" /></Field><Field label="Valor máximo (un.)"><input inputMode="numeric" value={material.maxPrice} onChange={event => setMaterial({ ...material, maxPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="Mesmo valor" className="input" /></Field></div><Field label="Link"><input type="url" value={material.link} onChange={event => setMaterial({ ...material, link: event.target.value })} placeholder="https://..." className="input" /></Field><Field label="Observações"><textarea rows={3} value={material.description} onChange={event => setMaterial({ ...material, description: event.target.value })} className="input resize-none" /></Field><button disabled={submitting || !material.name.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Salvando...' : 'Salvar material'}</button></form></Dialog>}
+      {isMaterialOpen && <Dialog title={editingMaterial ? 'Editar material' : 'Novo material'} onClose={() => setMaterialOpen(false)}><form onSubmit={saveMaterial} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><Field label="Material"><input value={material.name} onChange={event => setMaterial({ ...material, name: event.target.value })} placeholder="Ex.: Livro de anatomia" className="input" autoFocus /></Field><Field label="Quantidade necessária"><input type="number" min="1" value={material.plannedQuantity} onChange={event => setMaterial({ ...material, plannedQuantity: event.target.value })} className="input" /></Field><div className="grid gap-3 sm:grid-cols-2"><Field label="Valor mínimo (un.)"><input inputMode="numeric" value={material.minPrice} onChange={event => setMaterial({ ...material, minPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="R$ 0,00" className="input" /></Field><Field label="Valor máximo (un.)"><input inputMode="numeric" value={material.maxPrice} onChange={event => setMaterial({ ...material, maxPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="Mesmo valor" className="input" /></Field></div><Field label="Link"><input type="url" value={material.link} onChange={event => setMaterial({ ...material, link: event.target.value })} placeholder="https://..." className="input" /></Field><Field label="Observações"><textarea rows={3} value={material.description} onChange={event => setMaterial({ ...material, description: event.target.value })} className="input resize-none" /></Field><button disabled={submitting || !material.name.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Salvando...' : 'Salvar material'}</button></form></Dialog>}
     </main>
   );
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm"><span className="block text-xs font-bold uppercase tracking-wide text-stone-400">{label}</span><strong className={`mt-1 block text-lg ${tone ?? 'text-stone-900'}`}>{value}</strong></div>;
+  return <div className="rounded-xl border border-stone-200 bg-white p-3 shadow-sm sm:p-4"><span className="block text-[11px] font-bold uppercase tracking-wide text-stone-400 sm:text-xs">{label}</span><strong className={`mt-1 block text-base sm:text-lg ${tone ?? 'text-stone-900'}`}>{value}</strong></div>;
 }
