@@ -137,8 +137,3 @@ export function parseMaterialRows(rows: ExcelCell[][]): ImportedMaterial[] {
     }];
   });
 }
-
-export function subjectNameFromFile(fileName: string) {
-  const withoutExtension = fileName.replace(/\.xlsx$/i, '').trim();
-  return withoutExtension.replace(/^lista(?:\s+de)?\s+material(?:\s+de)?\s*/i, '').trim() || withoutExtension || 'Nova matéria';
-}

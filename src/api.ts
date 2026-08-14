@@ -126,10 +126,10 @@ export function updateItem(id: string, updates: Partial<Pick<EnxovalItem,
   });
 }
 
-export function importExcelMaterials(name: string, materials: ImportedMaterial[]) {
+export function importExcelMaterials(enxovalId: string, materials: ImportedMaterial[]) {
   return request<EnxovalWorkspace>('/api/imports/excel', {
     method: 'POST',
-    body: JSON.stringify({ name, materials })
+    body: JSON.stringify({ enxovalId, materials })
   });
 }
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ExternalLink, FileSpreadsheet, LogOut, Minus, Pencil, Plus, Trash2, Upload, WalletCards, X } from 'lucide-react';
 import { readSheet } from 'read-excel-file/browser';
-import { parseMaterialRows, subjectNameFromFile, type ImportedMaterial } from './excel-import';
+import { parseMaterialRows, type ImportedMaterial } from './excel-import';
 import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalSummary, EnxovalWorkspace } from './types';
 import {
   ApiError,
@@ -31,7 +31,6 @@ type MaterialForm = {
 
 type ExcelImportPreview = {
   fileName: string;
-  subjectName: string;
   materials: ImportedMaterial[];
 };
 
@@ -239,7 +238,7 @@ export default function App() {
       const rows = await readSheet(file);
       const materials = parseMaterialRows(rows);
       if (materials.length === 0) throw new Error('A planilha não possui materiais preenchidos.');
-      setExcelImport({ fileName: file.name, subjectName: subjectNameFromFile(file.name), materials });
+      setExcelImport({ fileName: file.name, materials });
       setImportOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível ler essa planilha.');
@@ -250,11 +249,11 @@ export default function App() {
 
   async function confirmExcelImport(event: React.FormEvent) {
     event.preventDefault();
-    if (!excelImport?.subjectName.trim()) return;
+    if (!excelImport || !activeSubject) return;
     setSubmitting(true);
     setError('');
     try {
-      applyWorkspace(await importExcelMaterials(excelImport.subjectName.trim(), excelImport.materials));
+      applyWorkspace(await importExcelMaterials(activeSubject.id, excelImport.materials));
       setImportOpen(false);
       setExcelImport(null);
     } catch (err) {
@@ -440,7 +439,7 @@ export default function App() {
       </section>
 
       {isCreateSubjectOpen && <Dialog title="Nova matéria" onClose={() => setCreateSubjectOpen(false)}><form onSubmit={createSubject} className="space-y-4 p-5"><Field label="Nome da Matéria"><input value={subjectName} onChange={event => setSubjectName(event.target.value)} placeholder="Ex.: Cirurgia" className="input" autoFocus /></Field><button disabled={submitting || !subjectName.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">Criar matéria</button></form></Dialog>}
-      {isImportOpen && excelImport && <Dialog title="Importar planilha" onClose={() => setImportOpen(false)}><form onSubmit={confirmExcelImport} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><div className="flex items-start gap-3 rounded-xl bg-stone-50 p-3"><FileSpreadsheet className="mt-0.5 shrink-0 text-brand-wood" size={22} /><div className="min-w-0"><p className="truncate text-sm font-semibold text-stone-800">{excelImport.fileName}</p><p className="text-sm text-stone-500">{excelImport.materials.length} materiais encontrados</p></div></div><Field label="Nome da matéria"><input value={excelImport.subjectName} onChange={event => setExcelImport({ ...excelImport, subjectName: event.target.value })} className="input" autoFocus /></Field><div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-400">Prévia</p><div className="overflow-hidden rounded-xl border border-stone-200"><table className="w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase text-stone-500"><tr><th className="px-3 py-2">Material</th><th className="px-3 py-2 text-center">Qtd.</th></tr></thead><tbody className="divide-y divide-stone-100">{excelImport.materials.slice(0, 5).map((item, index) => <tr key={`${item.name}-${index}`}><td className="px-3 py-2">{item.name}</td><td className="px-3 py-2 text-center">{item.plannedQuantity}</td></tr>)}</tbody></table></div>{excelImport.materials.length > 5 && <p className="mt-2 text-xs text-stone-500">E mais {excelImport.materials.length - 5} materiais.</p>}</div><p className="text-xs leading-5 text-stone-500">A planilha deve ter a coluna <strong>Material</strong>. Também reconhecemos: Quantidade, Quantidade adquirida, Valor mínimo, Valor máximo, Link e Observações.</p><button disabled={submitting || !excelImport.subjectName.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Importando...' : 'Criar lista com estes materiais'}</button></form></Dialog>}
+      {isImportOpen && excelImport && <Dialog title="Importar planilha" onClose={() => setImportOpen(false)}><form onSubmit={confirmExcelImport} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><div className="flex items-start gap-3 rounded-xl bg-stone-50 p-3"><FileSpreadsheet className="mt-0.5 shrink-0 text-brand-wood" size={22} /><div className="min-w-0"><p className="truncate text-sm font-semibold text-stone-800">{excelImport.fileName}</p><p className="text-sm text-stone-500">{excelImport.materials.length} materiais encontrados</p></div></div><div className="rounded-xl border border-brand-beige/60 bg-brand-beige/10 p-3"><p className="text-xs font-bold uppercase tracking-wide text-stone-500">Importar para</p><p className="mt-1 font-semibold text-stone-900">{activeSubject?.name}</p><p className="mt-1 text-xs text-stone-500">Os materiais serão adicionados à matéria aberta. Itens com o mesmo nome serão ignorados.</p></div><div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-400">Prévia</p><div className="overflow-hidden rounded-xl border border-stone-200"><table className="w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase text-stone-500"><tr><th className="px-3 py-2">Material</th><th className="px-3 py-2 text-center">Qtd.</th></tr></thead><tbody className="divide-y divide-stone-100">{excelImport.materials.slice(0, 5).map((item, index) => <tr key={`${item.name}-${index}`}><td className="px-3 py-2">{item.name}</td><td className="px-3 py-2 text-center">{item.plannedQuantity}</td></tr>)}</tbody></table></div>{excelImport.materials.length > 5 && <p className="mt-2 text-xs text-stone-500">E mais {excelImport.materials.length - 5} materiais.</p>}</div><p className="text-xs leading-5 text-stone-500">A planilha deve ter a coluna <strong>Material</strong>. Também reconhecemos: Quantidade, Quantidade adquirida, Valor mínimo, Valor máximo, Link e Observações.</p><button disabled={submitting || !activeSubject} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Importando...' : `Importar para ${activeSubject?.name ?? 'a matéria aberta'}`}</button></form></Dialog>}
       {isBudgetOpen && <Dialog title="Limite de orçamento" onClose={() => setBudgetOpen(false)}><form onSubmit={saveBudget} className="space-y-4 p-5"><p className="text-sm text-stone-500">Defina o teto de gastos desta matéria. Deixe vazio para remover o limite.</p><Field label="Limite"><input inputMode="numeric" value={budgetText} onChange={event => setBudgetText(moneyInput(centsFromInput(event.target.value)))} placeholder="R$ 0,00" className="input" autoFocus /></Field><button disabled={submitting} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white">Salvar limite</button></form></Dialog>}
       {isMaterialOpen && <Dialog title={editingMaterial ? 'Editar material' : 'Novo material'} onClose={() => setMaterialOpen(false)}><form onSubmit={saveMaterial} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><Field label="Material"><input value={material.name} onChange={event => setMaterial({ ...material, name: event.target.value })} placeholder="Ex.: Livro de anatomia" className="input" autoFocus /></Field><Field label="Quantidade necessária"><input type="number" min="1" value={material.plannedQuantity} onChange={event => setMaterial({ ...material, plannedQuantity: event.target.value })} className="input" /></Field><div className="grid gap-3 sm:grid-cols-2"><Field label="Valor mínimo (un.)"><input inputMode="numeric" value={material.minPrice} onChange={event => setMaterial({ ...material, minPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="R$ 0,00" className="input" /></Field><Field label="Valor máximo (un.)"><input inputMode="numeric" value={material.maxPrice} onChange={event => setMaterial({ ...material, maxPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="Mesmo valor" className="input" /></Field></div><Field label="Link"><input type="url" value={material.link} onChange={event => setMaterial({ ...material, link: event.target.value })} placeholder="https://..." className="input" /></Field><Field label="Observações"><textarea rows={3} value={material.description} onChange={event => setMaterial({ ...material, description: event.target.value })} className="input resize-none" /></Field><button disabled={submitting || !material.name.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Salvando...' : 'Salvar material'}</button></form></Dialog>}
     </main>
