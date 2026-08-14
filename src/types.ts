@@ -7,6 +7,7 @@ export interface EnxovalSummary {
   ownerId: string;
   role: EnxovalRole;
   discountCents: number;
+  budgetCents: number;
 }
 
 export interface EnxovalMember {
@@ -31,6 +32,10 @@ export interface EnxovalItem {
   link: string;
   description: string;
   priceCents: number | null;
+  plannedQuantity: number;
+  acquiredQuantity: number;
+  estimatedMinUnitPriceCents: number | null;
+  estimatedMaxUnitPriceCents: number | null;
   sortOrder: number;
   updatedAt: string;
 }

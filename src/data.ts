@@ -227,6 +227,10 @@ export const defaultItems: EnxovalItem[] = DEFAULT_TEMPLATE_ITEMS.map((item, ind
   link: '',
   description: '',
   priceCents: null,
+  plannedQuantity: 1,
+  acquiredQuantity: 0,
+  estimatedMinUnitPriceCents: null,
+  estimatedMaxUnitPriceCents: null,
   sortOrder: index,
   updatedAt: fallbackUpdatedAt
 }));

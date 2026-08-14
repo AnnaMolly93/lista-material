@@ -145,6 +145,10 @@ export async function migrateDatabase() {
       link text NOT NULL DEFAULT '',
       description text NOT NULL DEFAULT '',
       price_cents integer,
+      planned_quantity integer NOT NULL DEFAULT 1,
+      acquired_quantity integer NOT NULL DEFAULT 0,
+      estimated_min_unit_price_cents integer,
+      estimated_max_unit_price_cents integer,
       sort_order integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
@@ -178,14 +182,52 @@ export async function migrateDatabase() {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE IF NOT EXISTS material_imports (
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      import_key text NOT NULL,
+      enxoval_id uuid NOT NULL REFERENCES enxovais(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, import_key)
+    );
+
     ALTER TABLE enxovais ADD COLUMN IF NOT EXISTS discount_cents integer NOT NULL DEFAULT 0;
+    ALTER TABLE enxovais ADD COLUMN IF NOT EXISTS budget_cents integer NOT NULL DEFAULT 0;
     ALTER TABLE enxovais DROP CONSTRAINT IF EXISTS enxovais_discount_cents_non_negative;
     ALTER TABLE enxovais ADD CONSTRAINT enxovais_discount_cents_non_negative CHECK (discount_cents >= 0);
+    ALTER TABLE enxovais DROP CONSTRAINT IF EXISTS enxovais_budget_cents_non_negative;
+    ALTER TABLE enxovais ADD CONSTRAINT enxovais_budget_cents_non_negative CHECK (budget_cents >= 0);
     ALTER TABLE categories ADD COLUMN IF NOT EXISTS enxoval_id uuid REFERENCES enxovais(id) ON DELETE CASCADE;
     ALTER TABLE items ADD COLUMN IF NOT EXISTS enxoval_id uuid REFERENCES enxovais(id) ON DELETE CASCADE;
     ALTER TABLE items ADD COLUMN IF NOT EXISTS price_cents integer;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS planned_quantity integer NOT NULL DEFAULT 1;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS acquired_quantity integer NOT NULL DEFAULT 0;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS estimated_min_unit_price_cents integer;
+    ALTER TABLE items ADD COLUMN IF NOT EXISTS estimated_max_unit_price_cents integer;
     ALTER TABLE items DROP CONSTRAINT IF EXISTS items_price_cents_non_negative;
     ALTER TABLE items ADD CONSTRAINT items_price_cents_non_negative CHECK (price_cents IS NULL OR price_cents >= 0);
+    ALTER TABLE items DROP CONSTRAINT IF EXISTS items_planned_quantity_positive;
+    ALTER TABLE items ADD CONSTRAINT items_planned_quantity_positive CHECK (planned_quantity > 0);
+    ALTER TABLE items DROP CONSTRAINT IF EXISTS items_acquired_quantity_valid;
+    ALTER TABLE items ADD CONSTRAINT items_acquired_quantity_valid CHECK (acquired_quantity >= 0 AND acquired_quantity <= planned_quantity);
+    ALTER TABLE items DROP CONSTRAINT IF EXISTS items_estimated_min_price_valid;
+    ALTER TABLE items ADD CONSTRAINT items_estimated_min_price_valid CHECK (estimated_min_unit_price_cents IS NULL OR estimated_min_unit_price_cents >= 0);
+    ALTER TABLE items DROP CONSTRAINT IF EXISTS items_estimated_max_price_valid;
+    ALTER TABLE items ADD CONSTRAINT items_estimated_max_price_valid CHECK (estimated_max_unit_price_cents IS NULL OR estimated_max_unit_price_cents >= 0);
+    ALTER TABLE items DROP CONSTRAINT IF EXISTS items_estimated_price_range_valid;
+    ALTER TABLE items ADD CONSTRAINT items_estimated_price_range_valid CHECK (
+      estimated_min_unit_price_cents IS NULL
+      OR estimated_max_unit_price_cents IS NULL
+      OR estimated_min_unit_price_cents <= estimated_max_unit_price_cents
+    );
+
+    UPDATE items
+    SET
+      estimated_min_unit_price_cents = COALESCE(estimated_min_unit_price_cents, price_cents),
+      estimated_max_unit_price_cents = COALESCE(estimated_max_unit_price_cents, price_cents),
+      acquired_quantity = CASE WHEN checked THEN planned_quantity ELSE acquired_quantity END;
+
+    UPDATE items
+    SET checked = acquired_quantity >= planned_quantity;
 
     ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_user_name_unique;
 
@@ -199,6 +241,7 @@ export async function migrateDatabase() {
     CREATE INDEX IF NOT EXISTS items_user_id_idx ON items(user_id);
     CREATE INDEX IF NOT EXISTS items_category_id_idx ON items(category_id);
     CREATE INDEX IF NOT EXISTS items_enxoval_id_idx ON items(enxoval_id);
+    CREATE INDEX IF NOT EXISTS material_imports_enxoval_id_idx ON material_imports(enxoval_id);
     CREATE UNIQUE INDEX IF NOT EXISTS enxoval_templates_single_default_idx ON enxoval_templates(is_default) WHERE is_default;
     CREATE INDEX IF NOT EXISTS template_categories_template_id_idx ON template_categories(template_id);
     CREATE INDEX IF NOT EXISTS template_items_template_id_idx ON template_items(template_id);

@@ -4,6 +4,7 @@ import express, { Express, Request, Response } from 'express';
 import type { PoolClient } from 'pg';
 import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalMember, EnxovalSummary, EnxovalWorkspace } from '../src/types.ts';
 import { getPool, Queryable } from './database.ts';
+import { CIRURGIA_TEMPLATE } from './cirurgia-template.ts';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'enxoval_session';
@@ -22,6 +23,7 @@ interface EnxovalRow {
   owner_id: string;
   role: 'owner' | 'editor';
   discount_cents: number;
+  budget_cents: number;
 }
 
 interface MemberRow {
@@ -46,6 +48,10 @@ interface ItemRow {
   link: string;
   description: string;
   price_cents: number | null;
+  planned_quantity: number;
+  acquired_quantity: number;
+  estimated_min_unit_price_cents: number | null;
+  estimated_max_unit_price_cents: number | null;
   sort_order: number;
   updated_at: string | Date;
 }
@@ -147,7 +153,8 @@ function mapEnxoval(row: EnxovalRow): EnxovalSummary {
     name: row.name,
     ownerId: row.owner_id,
     role: row.role,
-    discountCents: Number(row.discount_cents ?? 0)
+    discountCents: Number(row.discount_cents ?? 0),
+    budgetCents: Number(row.budget_cents ?? 0)
   };
 }
 
@@ -182,6 +189,10 @@ function mapItem(row: ItemRow): EnxovalItem {
     link: row.link,
     description: row.description,
     priceCents: row.price_cents === null ? null : Number(row.price_cents),
+    plannedQuantity: Number(row.planned_quantity ?? 1),
+    acquiredQuantity: Number(row.acquired_quantity ?? 0),
+    estimatedMinUnitPriceCents: row.estimated_min_unit_price_cents === null ? null : Number(row.estimated_min_unit_price_cents),
+    estimatedMaxUnitPriceCents: row.estimated_max_unit_price_cents === null ? null : Number(row.estimated_max_unit_price_cents),
     sortOrder: row.sort_order,
     updatedAt: serializeTimestamp(row.updated_at)
   };
@@ -205,7 +216,7 @@ async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>) 
 
 async function fetchEnxovais(queryable: Queryable, userId: string) {
   const result = await queryable.query<EnxovalRow>(`
-    SELECT e.id, e.name, e.owner_id, e.discount_cents, em.role
+    SELECT e.id, e.name, e.owner_id, e.discount_cents, e.budget_cents, em.role
     FROM enxovais e
     INNER JOIN enxoval_members em ON em.enxoval_id = e.id
     WHERE em.user_id = $1
@@ -232,7 +243,7 @@ async function requireEnxovalOwner(queryable: Queryable, userId: string, enxoval
 
 async function fetchEnxoval(queryable: Queryable, userId: string, enxovalId: string) {
   const result = await queryable.query<EnxovalRow>(`
-    SELECT e.id, e.name, e.owner_id, e.discount_cents, em.role
+    SELECT e.id, e.name, e.owner_id, e.discount_cents, e.budget_cents, em.role
     FROM enxovais e
     INNER JOIN enxoval_members em ON em.enxoval_id = e.id
     WHERE e.id = $1 AND em.user_id = $2
@@ -283,6 +294,10 @@ async function fetchItems(queryable: Queryable, userId: string, enxovalId: strin
       i.link,
       i.description,
       i.price_cents,
+      i.planned_quantity,
+      i.acquired_quantity,
+      i.estimated_min_unit_price_cents,
+      i.estimated_max_unit_price_cents,
       i.sort_order,
       i.updated_at
     FROM items i
@@ -402,7 +417,7 @@ async function createEnxovalForUser(userId: string, name: string, options: { use
     const enxovalResult = await client.query<EnxovalRow>(`
       INSERT INTO enxovais (id, name, owner_id)
       VALUES ($1, $2, $3)
-      RETURNING id, name, owner_id, discount_cents, 'owner'::text AS role
+      RETURNING id, name, owner_id, discount_cents, budget_cents, 'owner'::text AS role
     `, [enxovalId, name, userId]);
 
     await client.query(`
@@ -455,7 +470,18 @@ async function requireCurrentUser(req: Request) {
   return user;
 }
 
-async function createItemForUser(input: { userId: string; enxovalId: string; name: string; categoryId?: string; categoryName?: string }) {
+async function createItemForUser(input: {
+  userId: string;
+  enxovalId: string;
+  name: string;
+  categoryId?: string;
+  categoryName?: string;
+  link?: string;
+  description?: string;
+  plannedQuantity?: number;
+  estimatedMinUnitPriceCents?: number | null;
+  estimatedMaxUnitPriceCents?: number | null;
+}) {
   return withTransaction(async client => {
     await requireEnxovalMember(client, input.userId, input.enxovalId);
 
@@ -467,7 +493,7 @@ async function createItemForUser(input: { userId: string; enxovalId: string; nam
     } else if (input.categoryName) {
       category = await findOrCreateCategory(client, input.userId, input.enxovalId, input.categoryName);
     } else {
-      throw new HttpError(400, 'Categoria é obrigatória.');
+      category = await findOrCreateCategory(client, input.userId, input.enxovalId, 'Sem tipo');
     }
 
     const orderResult = await client.query<{ next_order: number }>(`
@@ -478,9 +504,26 @@ async function createItemForUser(input: { userId: string; enxovalId: string; nam
 
     const itemId = randomUUID();
     await client.query(`
-      INSERT INTO items (id, user_id, enxoval_id, category_id, name, sort_order)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `, [itemId, input.userId, input.enxovalId, category.id, input.name, orderResult.rows[0]?.next_order ?? 0]);
+      INSERT INTO items (
+        id, user_id, enxoval_id, category_id, name, link, description,
+        price_cents, planned_quantity, acquired_quantity,
+        estimated_min_unit_price_cents, estimated_max_unit_price_cents, checked, sort_order
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, false, $12)
+    `, [
+      itemId,
+      input.userId,
+      input.enxovalId,
+      category.id,
+      input.name,
+      input.link ?? '',
+      input.description ?? '',
+      input.estimatedMinUnitPriceCents ?? null,
+      input.plannedQuantity ?? 1,
+      input.estimatedMinUnitPriceCents ?? null,
+      input.estimatedMaxUnitPriceCents ?? input.estimatedMinUnitPriceCents ?? null,
+      orderResult.rows[0]?.next_order ?? 0
+    ]);
 
     const itemResult = await client.query<ItemRow>(`
       SELECT
@@ -492,6 +535,10 @@ async function createItemForUser(input: { userId: string; enxovalId: string; nam
         i.link,
         i.description,
         i.price_cents,
+        i.planned_quantity,
+        i.acquired_quantity,
+        i.estimated_min_unit_price_cents,
+        i.estimated_max_unit_price_cents,
         i.sort_order,
         i.updated_at
       FROM items i
@@ -506,13 +553,63 @@ async function createItemForUser(input: { userId: string; enxovalId: string; nam
   });
 }
 
+function makeShoppingSearchLink(name: string) {
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(name)}`;
+}
+
+async function importCirurgiaForUser(userId: string) {
+  return withTransaction(async client => {
+    const existingImport = await client.query<{ enxoval_id: string }>(`
+      SELECT enxoval_id FROM material_imports
+      WHERE user_id = $1 AND import_key = 'cirurgia-sem-02-2026'
+    `, [userId]);
+
+    if (existingImport.rows[0]) {
+      return { workspace: await fetchWorkspace(client, userId, existingImport.rows[0].enxoval_id), imported: false };
+    }
+
+    const enxovalId = randomUUID();
+    await client.query(`
+      INSERT INTO enxovais (id, name, owner_id)
+      VALUES ($1, 'Cirurgia', $2)
+    `, [enxovalId, userId]);
+    await client.query(`
+      INSERT INTO enxoval_members (enxoval_id, user_id, role)
+      VALUES ($1, $2, 'owner')
+    `, [enxovalId, userId]);
+
+    const category = await findOrCreateCategory(client, userId, enxovalId, 'Sem tipo', 0);
+    for (const [sortOrder, material] of CIRURGIA_TEMPLATE.entries()) {
+      await client.query(`
+        INSERT INTO items (
+          id, user_id, enxoval_id, category_id, name, link, price_cents,
+          planned_quantity, acquired_quantity,
+          estimated_min_unit_price_cents, estimated_max_unit_price_cents, checked, sort_order
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, false, $11)
+      `, [
+        randomUUID(), userId, enxovalId, category.id, material.name,
+        material.link ?? makeShoppingSearchLink(material.name),
+        material.minUnitPriceCents, material.quantity,
+        material.minUnitPriceCents, material.maxUnitPriceCents, sortOrder
+      ]);
+    }
+
+    await client.query(`
+      INSERT INTO material_imports (user_id, import_key, enxoval_id)
+      VALUES ($1, 'cirurgia-sem-02-2026', $2)
+    `, [userId, enxovalId]);
+
+    return { workspace: await fetchWorkspace(client, userId, enxovalId), imported: true };
+  });
+}
+
 async function updateItemForUser(userId: string, itemId: string, body: unknown) {
   if (!body || typeof body !== 'object') {
     throw new HttpError(400, 'Dados inválidos.');
   }
 
-  const itemScope = await getPool().query<{ enxoval_id: string }>(`
-    SELECT i.enxoval_id
+  const itemScope = await getPool().query<{ enxoval_id: string; planned_quantity: number; acquired_quantity: number }>(`
+    SELECT i.enxoval_id, i.planned_quantity, i.acquired_quantity
     FROM items i
     INNER JOIN enxoval_members em ON em.enxoval_id = i.enxoval_id
     WHERE i.id = $1 AND em.user_id = $2
@@ -522,6 +619,8 @@ async function updateItemForUser(userId: string, itemId: string, body: unknown) 
   if (!itemScope.rows[0]) throw new HttpError(404, 'Item não encontrado.');
 
   const enxovalId = itemScope.rows[0].enxoval_id;
+  const currentPlannedQuantity = Number(itemScope.rows[0].planned_quantity);
+  const currentAcquiredQuantity = Number(itemScope.rows[0].acquired_quantity);
   const updates = body as Record<string, unknown>;
   const setClauses: string[] = [];
   const values: unknown[] = [];
@@ -536,7 +635,6 @@ async function updateItemForUser(userId: string, itemId: string, body: unknown) 
     if (!name) throw new HttpError(400, 'Nome do item é obrigatório.');
     addUpdate('name', name);
   }
-  if (typeof updates.checked === 'boolean') addUpdate('checked', updates.checked);
   if (typeof updates.link === 'string') addUpdate('link', updates.link.trim());
   if (typeof updates.description === 'string') addUpdate('description', updates.description.trim());
 
@@ -548,6 +646,42 @@ async function updateItemForUser(userId: string, itemId: string, body: unknown) 
     } else {
       throw new HttpError(400, 'Preço inválido.');
     }
+  }
+
+  const plannedQuantity = Object.prototype.hasOwnProperty.call(updates, 'plannedQuantity')
+    ? updates.plannedQuantity
+    : currentPlannedQuantity;
+  if (!Number.isInteger(plannedQuantity) || (plannedQuantity as number) < 1) {
+    throw new HttpError(400, 'A quantidade necessária deve ser pelo menos 1.');
+  }
+
+  let acquiredQuantity = Object.prototype.hasOwnProperty.call(updates, 'acquiredQuantity')
+    ? updates.acquiredQuantity
+    : currentAcquiredQuantity;
+  if (typeof updates.checked === 'boolean') acquiredQuantity = updates.checked ? plannedQuantity : 0;
+  if (!Number.isInteger(acquiredQuantity) || (acquiredQuantity as number) < 0 || (acquiredQuantity as number) > (plannedQuantity as number)) {
+    throw new HttpError(400, 'A quantidade adquirida precisa estar entre 0 e a quantidade necessária.');
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'plannedQuantity')) addUpdate('planned_quantity', plannedQuantity);
+  if (Object.prototype.hasOwnProperty.call(updates, 'acquiredQuantity') || typeof updates.checked === 'boolean') addUpdate('acquired_quantity', acquiredQuantity);
+
+  const hasEstimatedMin = Object.prototype.hasOwnProperty.call(updates, 'estimatedMinUnitPriceCents');
+  const hasEstimatedMax = Object.prototype.hasOwnProperty.call(updates, 'estimatedMaxUnitPriceCents');
+  if (hasEstimatedMin || hasEstimatedMax) {
+    const min = hasEstimatedMin ? updates.estimatedMinUnitPriceCents : undefined;
+    const max = hasEstimatedMax ? updates.estimatedMaxUnitPriceCents : undefined;
+    if ((min !== null && min !== undefined && (!Number.isInteger(min) || (min as number) < 0))
+      || (max !== null && max !== undefined && (!Number.isInteger(max) || (max as number) < 0))) {
+      throw new HttpError(400, 'Valor estimado inválido.');
+    }
+    if (typeof min === 'number' && typeof max === 'number' && min > max) {
+      throw new HttpError(400, 'O valor mínimo não pode ser maior que o máximo.');
+    }
+    if (hasEstimatedMin) {
+      addUpdate('estimated_min_unit_price_cents', min ?? null);
+      addUpdate('price_cents', min ?? null);
+    }
+    if (hasEstimatedMax) addUpdate('estimated_max_unit_price_cents', max ?? null);
   }
 
   if (typeof updates.categoryId === 'string') {
@@ -563,7 +697,7 @@ async function updateItemForUser(userId: string, itemId: string, body: unknown) 
   values.push(itemId, enxovalId);
   const result = await getPool().query<ItemRow>(`
     UPDATE items
-    SET ${setClauses.join(', ')}, updated_at = now()
+    SET ${setClauses.join(', ')}, checked = acquired_quantity >= planned_quantity, updated_at = now()
     WHERE id = $${values.length - 1} AND enxoval_id = $${values.length}
     RETURNING
       id,
@@ -574,6 +708,10 @@ async function updateItemForUser(userId: string, itemId: string, body: unknown) 
       link,
       description,
       price_cents,
+      planned_quantity,
+      acquired_quantity,
+      estimated_min_unit_price_cents,
+      estimated_max_unit_price_cents,
       sort_order,
       updated_at
   `, values);
@@ -720,8 +858,8 @@ export function registerApiRoutes(app: Express) {
 
   router.post('/enxovais', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
-    const name = requireText(req.body?.name, 'Nome da lista');
-    const useDefaultTemplate = req.body?.useDefaultTemplate !== false;
+    const name = requireText(req.body?.name, 'Nome da matéria');
+    const useDefaultTemplate = req.body?.useDefaultTemplate === true;
 
     const workspace = await createEnxovalForUser(user.id, name, { useDefaultTemplate });
     res.status(201).json(workspace);
@@ -745,7 +883,15 @@ export function registerApiRoutes(app: Express) {
 
     if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
       if (role !== 'owner') throw new HttpError(403, 'Apenas o dono pode alterar esta lista.');
-      addUpdate('name', requireText(updates.name, 'Nome da lista'));
+      addUpdate('name', requireText(updates.name, 'Nome da matéria'));
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'budgetCents')) {
+      if (role !== 'owner') throw new HttpError(403, 'Apenas o dono pode alterar o limite da matéria.');
+      if (typeof updates.budgetCents !== 'number' || !Number.isInteger(updates.budgetCents) || updates.budgetCents < 0) {
+        throw new HttpError(400, 'Limite de orçamento inválido.');
+      }
+      addUpdate('budget_cents', updates.budgetCents);
     }
 
     if (Object.prototype.hasOwnProperty.call(updates, 'discountCents')) {
@@ -762,7 +908,7 @@ export function registerApiRoutes(app: Express) {
       UPDATE enxovais
       SET ${setClauses.join(', ')}, updated_at = now()
       WHERE id = $${values.length}
-      RETURNING id, name, owner_id, discount_cents, $${values.length + 1}::text AS role
+      RETURNING id, name, owner_id, discount_cents, budget_cents, $${values.length + 1}::text AS role
     `, [...values, role]);
 
     if (!result.rows[0]) throw new HttpError(404, 'Lista não encontrada.');
@@ -776,6 +922,12 @@ export function registerApiRoutes(app: Express) {
     await getPool().query('DELETE FROM enxovais WHERE id = $1', [req.params.id]);
 
     res.status(204).end();
+  }));
+
+  router.post('/imports/cirurgia', asyncHandler(async (req, res) => {
+    const user = await requireCurrentUser(req);
+    const result = await importCirurgiaForUser(user.id);
+    res.status(result.imported ? 201 : 200).json(result.workspace);
   }));
 
   router.post('/enxovais/:id/members', asyncHandler(async (req, res) => {
@@ -853,8 +1005,28 @@ export function registerApiRoutes(app: Express) {
     const categoryName = typeof req.body?.categoryName === 'string' && req.body.categoryName.trim()
       ? req.body.categoryName.trim()
       : undefined;
+    const plannedQuantity = typeof req.body?.plannedQuantity === 'number' ? req.body.plannedQuantity : 1;
+    const estimatedMinUnitPriceCents = req.body?.estimatedMinUnitPriceCents ?? null;
+    const estimatedMaxUnitPriceCents = req.body?.estimatedMaxUnitPriceCents ?? estimatedMinUnitPriceCents;
+    if (!Number.isInteger(plannedQuantity) || plannedQuantity < 1) throw new HttpError(400, 'A quantidade necessária deve ser pelo menos 1.');
+    if ((estimatedMinUnitPriceCents !== null && (!Number.isInteger(estimatedMinUnitPriceCents) || estimatedMinUnitPriceCents < 0))
+      || (estimatedMaxUnitPriceCents !== null && (!Number.isInteger(estimatedMaxUnitPriceCents) || estimatedMaxUnitPriceCents < 0))
+      || (typeof estimatedMinUnitPriceCents === 'number' && typeof estimatedMaxUnitPriceCents === 'number' && estimatedMinUnitPriceCents > estimatedMaxUnitPriceCents)) {
+      throw new HttpError(400, 'Valores estimados inválidos.');
+    }
 
-    const result = await createItemForUser({ userId: user.id, enxovalId, name, categoryId, categoryName });
+    const result = await createItemForUser({
+      userId: user.id,
+      enxovalId,
+      name,
+      categoryId,
+      categoryName,
+      link: typeof req.body?.link === 'string' ? req.body.link.trim() : '',
+      description: typeof req.body?.description === 'string' ? req.body.description.trim() : '',
+      plannedQuantity,
+      estimatedMinUnitPriceCents,
+      estimatedMaxUnitPriceCents
+    });
     res.status(201).json(result);
   }));
 

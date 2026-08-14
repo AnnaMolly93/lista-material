@@ -16,6 +16,21 @@ body {
   color: #292524; /* stone-800 */
 }
 
+.input {
+  width: 100%;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: white;
+  color: #292524;
+  outline: none;
+}
+
+.input:focus {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgb(13 148 136 / 0.15);
+}
+
 /* Hide scrollbar for category list */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

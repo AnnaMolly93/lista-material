@@ -65,7 +65,7 @@ export function createEnxoval(name: string, useDefaultTemplate: boolean) {
     body: JSON.stringify({ name, useDefaultTemplate })
   });
 }
-export function updateEnxoval(enxovalId: string, updates: string | Partial<Pick<EnxovalWorkspace['enxoval'], 'name' | 'discountCents'>>) {
+export function updateEnxoval(enxovalId: string, updates: string | Partial<Pick<EnxovalWorkspace['enxoval'], 'name' | 'discountCents' | 'budgetCents'>>) {
   const body = typeof updates === 'string' ? { name: updates } : updates;
   return request<EnxovalWorkspace['enxoval']>(`/api/enxovais/${enxovalId}`, {
     method: 'PATCH',
@@ -98,18 +98,35 @@ export function reorderCategories(enxovalId: string, categoryIds: string[]) {
   });
 }
 
-export function createItem(input: { enxovalId: string; name: string; categoryId?: string; categoryName?: string }) {
+export function createItem(input: {
+  enxovalId: string;
+  name: string;
+  categoryId?: string;
+  categoryName?: string;
+  link?: string;
+  description?: string;
+  plannedQuantity?: number;
+  estimatedMinUnitPriceCents?: number | null;
+  estimatedMaxUnitPriceCents?: number | null;
+}) {
   return request<{ item: EnxovalItem; category: EnxovalCategory }>('/api/items', {
     method: 'POST',
     body: JSON.stringify(input)
   });
 }
 
-export function updateItem(id: string, updates: Partial<Pick<EnxovalItem, 'name' | 'checked' | 'link' | 'description' | 'priceCents' | 'categoryId'>>) {
+export function updateItem(id: string, updates: Partial<Pick<EnxovalItem,
+  'name' | 'checked' | 'link' | 'description' | 'priceCents' | 'categoryId' |
+  'plannedQuantity' | 'acquiredQuantity' | 'estimatedMinUnitPriceCents' | 'estimatedMaxUnitPriceCents'
+>>) {
   return request<EnxovalItem>(`/api/items/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(updates)
   });
+}
+
+export function importCirurgia() {
+  return request<EnxovalWorkspace>('/api/imports/cirurgia', { method: 'POST' });
 }
 
 export function deleteItem(id: string) {
