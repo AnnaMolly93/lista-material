@@ -222,12 +222,12 @@ async function requireEnxovalMember(queryable: Queryable, userId: string, enxova
     WHERE enxoval_id = $1 AND user_id = $2
   `, [enxovalId, userId]);
 
-  if (!result.rows[0]) throw new HttpError(404, 'Enxoval não encontrado.');
+  if (!result.rows[0]) throw new HttpError(404, 'Lista não encontrada.');
   return result.rows[0].role;
 }
 async function requireEnxovalOwner(queryable: Queryable, userId: string, enxovalId: string) {
   const role = await requireEnxovalMember(queryable, userId, enxovalId);
-  if (role !== 'owner') throw new HttpError(403, 'Apenas o dono pode alterar esse enxoval.');
+  if (role !== 'owner') throw new HttpError(403, 'Apenas o dono pode alterar esta lista.');
 }
 
 async function fetchEnxoval(queryable: Queryable, userId: string, enxovalId: string) {
@@ -239,7 +239,7 @@ async function fetchEnxoval(queryable: Queryable, userId: string, enxovalId: str
     LIMIT 1
   `, [enxovalId, userId]);
 
-  if (!result.rows[0]) throw new HttpError(404, 'Enxoval não encontrado.');
+  if (!result.rows[0]) throw new HttpError(404, 'Lista não encontrada.');
   return mapEnxoval(result.rows[0]);
 }
 
@@ -720,7 +720,7 @@ export function registerApiRoutes(app: Express) {
 
   router.post('/enxovais', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
-    const name = requireText(req.body?.name, 'Nome do enxoval');
+    const name = requireText(req.body?.name, 'Nome da lista');
     const useDefaultTemplate = req.body?.useDefaultTemplate !== false;
 
     const workspace = await createEnxovalForUser(user.id, name, { useDefaultTemplate });
@@ -744,8 +744,8 @@ export function registerApiRoutes(app: Express) {
     };
 
     if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
-      if (role !== 'owner') throw new HttpError(403, 'Apenas o dono pode alterar esse enxoval.');
-      addUpdate('name', requireText(updates.name, 'Nome do enxoval'));
+      if (role !== 'owner') throw new HttpError(403, 'Apenas o dono pode alterar esta lista.');
+      addUpdate('name', requireText(updates.name, 'Nome da lista'));
     }
 
     if (Object.prototype.hasOwnProperty.call(updates, 'discountCents')) {
@@ -765,7 +765,7 @@ export function registerApiRoutes(app: Express) {
       RETURNING id, name, owner_id, discount_cents, $${values.length + 1}::text AS role
     `, [...values, role]);
 
-    if (!result.rows[0]) throw new HttpError(404, 'Enxoval não encontrado.');
+    if (!result.rows[0]) throw new HttpError(404, 'Lista não encontrada.');
     res.json(mapEnxoval(result.rows[0]));
   }));
 
@@ -814,14 +814,14 @@ export function registerApiRoutes(app: Express) {
 
   router.get('/categories', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
-    const enxovalId = requireText(req.query.enxovalId, 'Enxoval');
+    const enxovalId = requireText(req.query.enxovalId, 'Lista');
     res.json(await fetchCategories(getPool(), user.id, enxovalId));
   }));
 
   router.post('/categories', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
     const name = requireText(req.body?.name, 'Nome da categoria');
-    const enxovalId = requireText(req.body?.enxovalId, 'Enxoval');
+    const enxovalId = requireText(req.body?.enxovalId, 'Lista');
 
     const category = await withTransaction(client => findOrCreateCategory(client, user.id, enxovalId, name));
     res.status(201).json(category);
@@ -829,7 +829,7 @@ export function registerApiRoutes(app: Express) {
 
   router.patch('/categories/order', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
-    const enxovalId = requireText(req.body?.enxovalId, 'Enxoval');
+    const enxovalId = requireText(req.body?.enxovalId, 'Lista');
     const categoryIds = Array.isArray(req.body?.categoryIds) && req.body.categoryIds.every((categoryId: unknown) => typeof categoryId === 'string')
       ? req.body.categoryIds
       : null;
@@ -841,14 +841,14 @@ export function registerApiRoutes(app: Express) {
 
   router.get('/items', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
-    const enxovalId = requireText(req.query.enxovalId, 'Enxoval');
+    const enxovalId = requireText(req.query.enxovalId, 'Lista');
     res.json(await fetchItems(getPool(), user.id, enxovalId));
   }));
 
   router.post('/items', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
     const name = requireText(req.body?.name, 'Nome do item');
-    const enxovalId = requireText(req.body?.enxovalId, 'Enxoval');
+    const enxovalId = requireText(req.body?.enxovalId, 'Lista');
     const categoryId = typeof req.body?.categoryId === 'string' ? req.body.categoryId : undefined;
     const categoryName = typeof req.body?.categoryName === 'string' && req.body.categoryName.trim()
       ? req.body.categoryName.trim()

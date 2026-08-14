@@ -367,7 +367,7 @@ export default function App() {
     }
 
     if (isCreateEnxovalOpen) {
-      document.title = makeTitle('Novo enxoval');
+      document.title = makeTitle('Nova lista');
       return;
     }
 
@@ -382,12 +382,12 @@ export default function App() {
     }
 
     if (isRenameEnxovalOpen) {
-      document.title = makeTitle(activeEnxoval ? 'Editar ' + activeEnxoval.name : 'Editar enxoval');
+      document.title = makeTitle(activeEnxoval ? 'Editar ' + activeEnxoval.name : 'Editar lista');
       return;
     }
 
     if (isDeleteEnxovalOpen) {
-      document.title = makeTitle(activeEnxoval ? 'Excluir ' + activeEnxoval.name : 'Excluir enxoval');
+      document.title = makeTitle(activeEnxoval ? 'Excluir ' + activeEnxoval.name : 'Excluir lista');
       return;
     }
 
@@ -416,7 +416,7 @@ export default function App() {
       return;
     }
 
-    document.title = makeTitle('Meus enxovais');
+    document.title = makeTitle('Minhas listas');
   }, [activeEnxoval, isCreateCategoryOpen, isCreateEnxovalOpen, isDeleteEnxovalOpen, isDiscountsOpen, isInviteOpen, isLoading, isRenameEnxovalOpen, isReorderCategoriesOpen, isWorkspaceLoading, itemToDelete, itemToEdit, user]);
 
   useEffect(() => {
@@ -461,7 +461,7 @@ export default function App() {
         setUser(null);
         return;
       }
-      setError(err instanceof Error ? err.message : 'Não foi possível atualizar o enxoval.');
+      setError(err instanceof Error ? err.message : 'Não foi possível atualizar a lista.');
     } finally {
       setIsRefreshing(false);
     }
@@ -823,7 +823,7 @@ export default function App() {
       const workspace = await fetchEnxovalRequest(enxovalId);
       applyWorkspace(workspace);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível abrir o enxoval.');
+      setError(err instanceof Error ? err.message : 'Não foi possível abrir a lista.');
     } finally {
       setIsWorkspaceLoading(false);
     }
@@ -862,7 +862,7 @@ export default function App() {
   };
 
   const addItem = async (name: string, categoryId?: string, categoryName?: string) => {
-    if (!activeEnxoval) throw new Error('Selecione um enxoval antes de adicionar itens.');
+    if (!activeEnxoval) throw new Error('Selecione uma lista antes de adicionar itens.');
 
     const result = await createItemRequest({ enxovalId: activeEnxoval.id, name, categoryId, categoryName });
 
@@ -1028,7 +1028,7 @@ export default function App() {
       setNewEnxovalUseDefaultTemplate(true);
       setIsCreateEnxovalOpen(false);
     } catch (err) {
-      setDialogError(err instanceof Error ? err.message : 'Não foi possível criar o enxoval.');
+      setDialogError(err instanceof Error ? err.message : 'Não foi possível criar a lista.');
     } finally {
       setIsDialogSubmitting(false);
     }
@@ -1051,7 +1051,7 @@ export default function App() {
       setRenameEnxovalName('');
       setIsRenameEnxovalOpen(false);
     } catch (err) {
-      setDialogError(err instanceof Error ? err.message : 'Não foi possível renomear o enxoval.');
+      setDialogError(err instanceof Error ? err.message : 'Não foi possível renomear a lista.');
     } finally {
       setIsDialogSubmitting(false);
     }
@@ -1083,7 +1083,7 @@ export default function App() {
         setActiveCategoryId('');
       }
     } catch (err) {
-      setDialogError(err instanceof Error ? err.message : 'Não foi possível excluir o enxoval.');
+      setDialogError(err instanceof Error ? err.message : 'Não foi possível excluir a lista.');
     } finally {
       setIsDialogSubmitting(false);
     }
@@ -1261,7 +1261,7 @@ export default function App() {
               className="font-serif font-bold text-stone-900 leading-tight truncate transition-[font-size] duration-300 ease-out sm:text-3xl"
               style={titleStyle}
             >
-              {activeEnxoval?.name ?? 'Enxoval'}
+              {activeEnxoval?.name ?? 'Lista de Material'}
             </h1>
             {hasEnxoval && (
               <div
@@ -1299,8 +1299,8 @@ export default function App() {
                 type="button"
                 onClick={() => void handleRefresh()}
                 disabled={isRefreshing || isWorkspaceLoading}
-                aria-label="Atualizar enxoval"
-                title="Atualizar enxoval"
+                aria-label="Atualizar lista"
+                title="Atualizar lista"
                 className="inline-flex h-9 w-9 items-center justify-center text-brand-wood transition-colors hover:text-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
@@ -1380,8 +1380,8 @@ export default function App() {
                   <button
                     type="button"
                     onClick={openRenameEnxoval}
-                    aria-label="Editar nome do enxoval"
-                    title="Editar nome do enxoval"
+                    aria-label="Editar nome da lista"
+                    title="Editar nome da lista"
                     className="inline-flex h-9 w-9 items-center justify-center text-stone-600 bg-stone-100 rounded-lg hover:bg-stone-200 transition-colors"
                   >
                     <Pencil size={17} />
@@ -1389,8 +1389,8 @@ export default function App() {
                   <button
                     type="button"
                     onClick={openDeleteEnxoval}
-                    aria-label="Excluir enxoval"
-                    title="Excluir enxoval"
+                    aria-label="Excluir lista"
+                    title="Excluir lista"
                     className="inline-flex h-9 w-9 items-center justify-center text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
                   >
                     <Trash2 size={17} />
@@ -1463,7 +1463,7 @@ export default function App() {
 
         {isWorkspaceLoading && (
           <div className="mb-4 text-sm text-stone-500 bg-white border border-stone-200 rounded-lg px-3 py-2">
-            Carregando enxoval...
+            Carregando lista...
           </div>
         )}
 
@@ -1556,7 +1556,7 @@ export default function App() {
           <div className="min-h-[45vh] flex items-center justify-center px-2">
             <div className="text-center max-w-sm">
               <Tooth className="w-12 h-12 text-brand-wood mx-auto mb-4" />
-              <h2 className="font-serif text-2xl font-bold text-stone-900 mb-2">Crie seu primeiro enxoval</h2>
+              <h2 className="font-serif text-2xl font-bold text-stone-900 mb-2">Crie sua primeira lista</h2>
               <p className="text-sm text-stone-500 mb-6">
                 Comece com a lista sugerida ou monte uma lista vazia.
               </p>
@@ -1566,7 +1566,7 @@ export default function App() {
                 className="inline-flex items-center justify-center gap-2 bg-brand-dark text-white rounded-xl px-5 py-3 text-base font-medium hover:bg-black transition-colors"
               >
                 <ListPlus size={18} />
-                Criar enxoval
+                Criar lista
               </button>
             </div>
           </div>
@@ -1748,10 +1748,10 @@ export default function App() {
         </form>
       </Dialog>
 
-      <Dialog title="Novo enxoval" isOpen={isCreateEnxovalOpen} onClose={() => setIsCreateEnxovalOpen(false)}>
+      <Dialog title="Nova lista" isOpen={isCreateEnxovalOpen} onClose={() => setIsCreateEnxovalOpen(false)}>
         <form onSubmit={handleCreateEnxoval} className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-4">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Nome do enxoval</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Nome da lista</label>
             <input
               type="text"
               value={newEnxovalName}
@@ -1792,7 +1792,7 @@ export default function App() {
             disabled={!newEnxovalName.trim() || isDialogSubmitting}
             className="w-full py-4 bg-brand-dark text-white rounded-xl font-medium text-lg hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isDialogSubmitting ? 'Criando...' : 'Criar enxoval'}
+            {isDialogSubmitting ? 'Criando...' : 'Criar lista'}
           </button>
         </form>
       </Dialog>
@@ -1886,10 +1886,10 @@ export default function App() {
           </button>
         </form>
       </Dialog>
-      <Dialog title="Editar enxoval" isOpen={isRenameEnxovalOpen} onClose={() => setIsRenameEnxovalOpen(false)}>
+      <Dialog title="Editar lista" isOpen={isRenameEnxovalOpen} onClose={() => setIsRenameEnxovalOpen(false)}>
         <form onSubmit={handleRenameEnxoval} className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-4">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Nome do enxoval</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Nome da lista</label>
             <input
               type="text"
               value={renameEnxovalName}
@@ -1915,10 +1915,10 @@ export default function App() {
         </form>
       </Dialog>
 
-      <Dialog title="Excluir enxoval" isOpen={isDeleteEnxovalOpen} onClose={() => setIsDeleteEnxovalOpen(false)}>
+      <Dialog title="Excluir lista" isOpen={isDeleteEnxovalOpen} onClose={() => setIsDeleteEnxovalOpen(false)}>
         <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-4">
           <p className="text-sm text-stone-600">
-            Esta ação vai excluir o enxoval {activeEnxoval ? `"${activeEnxoval.name}"` : ''}, incluindo categorias, itens e colaboradores.
+            Esta ação vai excluir a lista {activeEnxoval ? `"${activeEnxoval.name}"` : ''}, incluindo categorias, itens e colaboradores.
           </p>
 
           {dialogError && (

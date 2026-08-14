@@ -1,6 +1,6 @@
 import type { Category, EnxovalItem } from './types';
 
-export const DEFAULT_ENXOVAL_TEMPLATE_NAME = 'Lista sugerida de enxoval';
+export const DEFAULT_ENXOVAL_TEMPLATE_NAME = 'Lista sugerida de materiais';
 
 export const DEFAULT_TEMPLATE_CATEGORIES: Category[] = [
   'Cozinha',
