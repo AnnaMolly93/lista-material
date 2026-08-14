@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Reorder } from 'motion/react';
-import { Plus, Home, Sparkles, LogOut, User, Users, UserPlus, ListPlus, X, Pencil, Trash2, RefreshCw, Search, GripVertical, ExternalLink, Percent, Minus, SlidersHorizontal } from 'lucide-react';
+import { Plus, Sparkles, LogOut, User, Users, UserPlus, ListPlus, X, Pencil, Trash2, RefreshCw, Search, GripVertical, ExternalLink, Percent, Minus, SlidersHorizontal } from 'lucide-react';
 import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalMember, EnxovalSummary, EnxovalWorkspace } from './types';
 import { ApiError, createCategory as createCategoryRequest, createEnxoval as createEnxovalRequest, createItem as createItemRequest, deleteEnxoval as deleteEnxovalRequest, deleteItem as deleteItemRequest, fetchBootstrap, fetchEnxoval as fetchEnxovalRequest, inviteMember as inviteMemberRequest, login as loginRequest, logout as logoutRequest, register as registerRequest, reorderCategories as reorderCategoriesRequest, updateEnxoval as updateEnxovalRequest, updateItem as updateItemRequest } from './api';
 import { ItemRow } from './components/ItemRow';
@@ -11,7 +11,15 @@ type DiscountOperation = 'add' | 'subtract';
 type ItemSortMode = 'name' | 'updated';
 type CategorySwipeDirection = 'next' | 'previous';
 
-const APP_NAME = 'Enxoval de Casa Nova';
+const APP_NAME = 'Lista de Material';
+
+function Tooth({ size = 24, ...props }: React.SVGProps<SVGSVGElement> & { size?: number | string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M32 9c-10.1 0-18 7.3-18 17.1 0 6.6 3.3 10.4 5.2 14.4 1.3 2.8 1.8 8.5 5.7 8.5 3.5 0 3.5-7.7 7.1-7.7s3.6 7.7 7.1 7.7c3.9 0 4.4-5.7 5.7-8.5C46.7 36.5 50 32.7 50 26.1 50 16.3 42.1 9 32 9Zm-9.2 18.5a3.1 3.1 0 1 1 0-6.2 3.1 3.1 0 0 1 0 6.2Zm18.4 0a3.1 3.1 0 1 1 0-6.2 3.1 3.1 0 0 1 0 6.2Z" />
+    </svg>
+  );
+}
 
 function makeTitle(context?: string) {
   return context ? `${context} | ${APP_NAME}` : APP_NAME;
@@ -124,11 +132,11 @@ function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       <div className="w-full max-w-md bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="p-6 border-b border-stone-100">
           <div className="flex items-center gap-2 text-brand-wood mb-2">
-            <Home size={20} />
-            <span className="text-xs font-bold tracking-widest uppercase">Enxoval</span>
+            <Tooth size={20} />
+            <span className="text-xs font-bold tracking-widest uppercase">Lista de Material</span>
           </div>
           <h1 className="font-serif text-3xl font-bold text-stone-900 leading-tight">
-            Enxoval de Casa Nova
+            Lista de Material
           </h1>
         </div>
 
@@ -1148,7 +1156,7 @@ export default function App() {
       discountOperation === 'add'
         ? current + discountAdjustmentCents
         : Math.max(0, current - discountAdjustmentCents)
-    ));
+      ));
     setDiscountAdjustmentText('');
     discountAdjustmentInputRef.current?.focus({ preventScroll: true });
   };
@@ -1207,7 +1215,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-stone-50 font-sans text-brand-dark flex items-center justify-center">
         <div className="text-center">
-          <Home className="w-10 h-10 text-brand-wood mx-auto mb-3" />
+          <Tooth className="w-10 h-10 text-brand-wood mx-auto mb-3" />
           <p className="text-sm text-stone-500 font-medium">Carregando lista...</p>
         </div>
       </div>
@@ -1246,8 +1254,8 @@ export default function App() {
               className="flex items-center gap-2 text-brand-wood mb-1 overflow-hidden transition-[opacity,max-height,transform] duration-300 ease-out"
               style={eyebrowStyle}
             >
-              <Home size={20} className="shrink-0" />
-              <span className="text-xs font-bold leading-none tracking-widest uppercase">Enxoval Compartilhado</span>
+              <Tooth size={20} className="shrink-0" />
+              <span className="text-xs font-bold leading-none tracking-widest uppercase">Lista de Material</span>
             </div>
             <h1
               className="font-serif font-bold text-stone-900 leading-tight truncate transition-[font-size] duration-300 ease-out sm:text-3xl"
@@ -1547,7 +1555,7 @@ export default function App() {
         ) : (
           <div className="min-h-[45vh] flex items-center justify-center px-2">
             <div className="text-center max-w-sm">
-              <Home className="w-12 h-12 text-brand-wood mx-auto mb-4" />
+              <Tooth className="w-12 h-12 text-brand-wood mx-auto mb-4" />
               <h2 className="font-serif text-2xl font-bold text-stone-900 mb-2">Crie seu primeiro enxoval</h2>
               <p className="text-sm text-stone-500 mb-6">
                 Comece com a lista sugerida ou monte uma lista vazia.

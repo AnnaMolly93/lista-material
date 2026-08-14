@@ -1,6 +1,6 @@
 {
-  "name": "Enxoval de Casa Nova",
-  "description": "Aplicativo para gerenciar a lista de enxoval de casa nova, permitindo marcar itens, adicionar links e descrições.",
+  "name": "Lista de Material",
+  "description": "Aplicativo para organizar listas de materiais, permitindo marcar itens, adicionar links e descrições.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
