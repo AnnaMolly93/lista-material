@@ -1751,7 +1751,7 @@ export default function App() {
       <Dialog title="Nova lista" isOpen={isCreateEnxovalOpen} onClose={() => setIsCreateEnxovalOpen(false)}>
         <form onSubmit={handleCreateEnxoval} className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-4">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Nome da lista</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Nome da Matéria</label>
             <input
               type="text"
               value={newEnxovalName}
@@ -1889,7 +1889,7 @@ export default function App() {
       <Dialog title="Editar lista" isOpen={isRenameEnxovalOpen} onClose={() => setIsRenameEnxovalOpen(false)}>
         <form onSubmit={handleRenameEnxoval} className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-4">
           <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Nome da lista</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Nome da Matéria</label>
             <input
               type="text"
               value={renameEnxovalName}
