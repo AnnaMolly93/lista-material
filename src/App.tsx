@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Download, ExternalLink, LogOut, Minus, Pencil, Plus, Trash2, WalletCards, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BookOpen, ExternalLink, FileSpreadsheet, LogOut, Minus, Pencil, Plus, Trash2, Upload, WalletCards, X } from 'lucide-react';
+import { readSheet } from 'read-excel-file/browser';
+import { parseMaterialRows, subjectNameFromFile, type ImportedMaterial } from './excel-import';
 import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalSummary, EnxovalWorkspace } from './types';
 import {
   ApiError,
@@ -10,7 +12,7 @@ import {
   deleteItem,
   fetchBootstrap,
   fetchEnxoval,
-  importCirurgia,
+  importExcelMaterials,
   login,
   logout,
   register,
@@ -27,6 +29,12 @@ type MaterialForm = {
   maxPrice: string;
   link: string;
   description: string;
+};
+
+type ExcelImportPreview = {
+  fileName: string;
+  subjectName: string;
+  materials: ImportedMaterial[];
 };
 
 const APP_NAME = 'Lista de Material';
@@ -146,12 +154,15 @@ export default function App() {
   const [isCreateSubjectOpen, setCreateSubjectOpen] = useState(false);
   const [isBudgetOpen, setBudgetOpen] = useState(false);
   const [isMaterialOpen, setMaterialOpen] = useState(false);
+  const [isImportOpen, setImportOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<EnxovalItem | null>(null);
   const [subjectName, setSubjectName] = useState('');
   const [budgetText, setBudgetText] = useState('');
   const [material, setMaterial] = useState<MaterialForm>(blankMaterial);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+  const [excelImport, setExcelImport] = useState<ExcelImportPreview | null>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const applyWorkspace = (workspace: EnxovalWorkspace) => {
     setActiveSubject(workspace.enxoval);
@@ -219,9 +230,40 @@ export default function App() {
     } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível criar a matéria.'); } finally { setSubmitting(false); }
   }
 
-  async function importSubject() {
+  async function selectExcelFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
     setSubmitting(true);
-    try { applyWorkspace(await importCirurgia()); } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível importar Cirurgia.'); } finally { setSubmitting(false); }
+    setError('');
+    try {
+      const rows = await readSheet(file);
+      const materials = parseMaterialRows(rows);
+      if (materials.length === 0) throw new Error('A planilha não possui materiais preenchidos.');
+      setExcelImport({ fileName: file.name, subjectName: subjectNameFromFile(file.name), materials });
+      setImportOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível ler essa planilha.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function confirmExcelImport(event: React.FormEvent) {
+    event.preventDefault();
+    if (!excelImport?.subjectName.trim()) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      applyWorkspace(await importExcelMaterials(excelImport.subjectName.trim(), excelImport.materials));
+      setImportOpen(false);
+      setExcelImport(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível importar a planilha.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function openNewMaterial() {
@@ -336,7 +378,8 @@ export default function App() {
               {subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
             </select>
             <button type="button" onClick={() => setCreateSubjectOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-brand-dark px-3 py-2 text-sm font-semibold text-white"><Plus size={16} /> Nova matéria</button>
-            <button type="button" onClick={() => void importSubject()} disabled={submitting} className="inline-flex items-center gap-2 rounded-lg border border-brand-beige bg-white px-3 py-2 text-sm font-semibold text-brand-dark disabled:opacity-50"><Download size={16} /> Importar Cirurgia</button>
+            <input ref={excelInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event => void selectExcelFile(event)} className="sr-only" />
+            <button type="button" onClick={() => excelInputRef.current?.click()} disabled={submitting} className="inline-flex items-center gap-2 rounded-lg border border-brand-beige bg-white px-3 py-2 text-sm font-semibold text-brand-dark disabled:opacity-50"><Upload size={16} /> Importar Excel</button>
           </div>
         </div>
       </header>
@@ -344,7 +387,7 @@ export default function App() {
       <section className="mx-auto max-w-6xl px-4 py-6 sm:px-8">
         {error && <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><button onClick={() => setError('')}><X size={16} /></button></div>}
         {!activeSubject ? (
-          <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center"><BookOpen className="mx-auto mb-3 text-brand-wood" size={44} /><h2 className="font-serif text-2xl font-bold">Crie sua primeira matéria</h2><p className="mt-2 text-stone-500">Comece vazia ou importe os materiais de Cirurgia da planilha.</p></div>
+          <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center"><BookOpen className="mx-auto mb-3 text-brand-wood" size={44} /><h2 className="font-serif text-2xl font-bold">Crie sua primeira matéria</h2><p className="mt-2 text-stone-500">Comece vazia ou envie uma planilha Excel com seus materiais.</p></div>
         ) : (
           <>
             <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -371,6 +414,7 @@ export default function App() {
       </section>
 
       {isCreateSubjectOpen && <Dialog title="Nova matéria" onClose={() => setCreateSubjectOpen(false)}><form onSubmit={createSubject} className="space-y-4 p-5"><Field label="Nome da Matéria"><input value={subjectName} onChange={event => setSubjectName(event.target.value)} placeholder="Ex.: Cirurgia" className="input" autoFocus /></Field><button disabled={submitting || !subjectName.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">Criar matéria</button></form></Dialog>}
+      {isImportOpen && excelImport && <Dialog title="Importar planilha" onClose={() => setImportOpen(false)}><form onSubmit={confirmExcelImport} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><div className="flex items-start gap-3 rounded-xl bg-stone-50 p-3"><FileSpreadsheet className="mt-0.5 shrink-0 text-brand-wood" size={22} /><div className="min-w-0"><p className="truncate text-sm font-semibold text-stone-800">{excelImport.fileName}</p><p className="text-sm text-stone-500">{excelImport.materials.length} materiais encontrados</p></div></div><Field label="Nome da matéria"><input value={excelImport.subjectName} onChange={event => setExcelImport({ ...excelImport, subjectName: event.target.value })} className="input" autoFocus /></Field><div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-400">Prévia</p><div className="overflow-hidden rounded-xl border border-stone-200"><table className="w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase text-stone-500"><tr><th className="px-3 py-2">Material</th><th className="px-3 py-2">Tipo</th><th className="px-3 py-2 text-center">Qtd.</th></tr></thead><tbody className="divide-y divide-stone-100">{excelImport.materials.slice(0, 5).map((item, index) => <tr key={`${item.name}-${index}`}><td className="px-3 py-2">{item.name}</td><td className="px-3 py-2 text-stone-500">{item.categoryName}</td><td className="px-3 py-2 text-center">{item.plannedQuantity}</td></tr>)}</tbody></table></div>{excelImport.materials.length > 5 && <p className="mt-2 text-xs text-stone-500">E mais {excelImport.materials.length - 5} materiais.</p>}</div><p className="text-xs leading-5 text-stone-500">A planilha deve ter a coluna <strong>Material</strong>. Também reconhecemos: Tipo, Quantidade, Quantidade adquirida, Valor mínimo, Valor máximo, Link e Observações.</p><button disabled={submitting || !excelImport.subjectName.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Importando...' : 'Criar lista com estes materiais'}</button></form></Dialog>}
       {isBudgetOpen && <Dialog title="Limite de orçamento" onClose={() => setBudgetOpen(false)}><form onSubmit={saveBudget} className="space-y-4 p-5"><p className="text-sm text-stone-500">Defina o teto de gastos desta matéria. Deixe vazio para remover o limite.</p><Field label="Limite"><input inputMode="numeric" value={budgetText} onChange={event => setBudgetText(moneyInput(centsFromInput(event.target.value)))} placeholder="R$ 0,00" className="input" autoFocus /></Field><button disabled={submitting} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white">Salvar limite</button></form></Dialog>}
       {isMaterialOpen && <Dialog title={editingMaterial ? 'Editar material' : 'Novo material'} onClose={() => setMaterialOpen(false)}><form onSubmit={saveMaterial} className="max-h-[78vh] space-y-4 overflow-y-auto p-5"><Field label="Material"><input value={material.name} onChange={event => setMaterial({ ...material, name: event.target.value })} placeholder="Ex.: Livro de anatomia" className="input" autoFocus /></Field><Field label="Tipo de material"><input list="types" value={material.type} onChange={event => setMaterial({ ...material, type: event.target.value })} placeholder="Ex.: Instrumental" className="input" /><datalist id="types">{categories.filter(category => category.name !== 'Sem tipo').map(category => <option key={category.id} value={category.name} />)}</datalist></Field><Field label="Quantidade necessária"><input type="number" min="1" value={material.plannedQuantity} onChange={event => setMaterial({ ...material, plannedQuantity: event.target.value })} className="input" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Valor mínimo (un.)"><input inputMode="numeric" value={material.minPrice} onChange={event => setMaterial({ ...material, minPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="R$ 0,00" className="input" /></Field><Field label="Valor máximo (un.)"><input inputMode="numeric" value={material.maxPrice} onChange={event => setMaterial({ ...material, maxPrice: moneyInput(centsFromInput(event.target.value)) })} placeholder="Mesmo valor" className="input" /></Field></div><Field label="Link"><input type="url" value={material.link} onChange={event => setMaterial({ ...material, link: event.target.value })} placeholder="https://..." className="input" /></Field><Field label="Observações"><textarea rows={3} value={material.description} onChange={event => setMaterial({ ...material, description: event.target.value })} className="input resize-none" /></Field><button disabled={submitting || !material.name.trim()} className="w-full rounded-xl bg-brand-dark py-3 font-semibold text-white disabled:opacity-50">{submitting ? 'Salvando...' : 'Salvar material'}</button></form></Dialog>}
     </main>

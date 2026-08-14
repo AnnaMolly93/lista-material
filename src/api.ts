@@ -1,3 +1,4 @@
+import type { ImportedMaterial } from './excel-import';
 import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalMember, EnxovalWorkspace } from './types';
 
 export class ApiError extends Error {
@@ -125,8 +126,11 @@ export function updateItem(id: string, updates: Partial<Pick<EnxovalItem,
   });
 }
 
-export function importCirurgia() {
-  return request<EnxovalWorkspace>('/api/imports/cirurgia', { method: 'POST' });
+export function importExcelMaterials(name: string, materials: ImportedMaterial[]) {
+  return request<EnxovalWorkspace>('/api/imports/excel', {
+    method: 'POST',
+    body: JSON.stringify({ name, materials })
+  });
 }
 
 export function deleteItem(id: string) {
