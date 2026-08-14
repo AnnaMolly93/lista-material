@@ -580,7 +580,13 @@ function optionalCents(value: unknown, fieldName: string) {
 function validateImportedMaterials(body: unknown) {
   if (!body || typeof body !== 'object') throw new HttpError(400, 'Dados de importação inválidos.');
   const input = body as Record<string, unknown>;
-  const name = requireText(input.name, 'Nome da matéria').slice(0, 120);
+  if (!input.enxovalId && typeof input.name === 'string') {
+    throw new HttpError(409, 'Atualize a página antes de importar. A planilha agora é adicionada à matéria aberta.');
+  }
+  const enxovalId = requireText(input.enxovalId, 'Matéria');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(enxovalId)) {
+    throw new HttpError(400, 'Matéria inválida.');
+  }
 
   if (!Array.isArray(input.materials) || input.materials.length === 0) {
     throw new HttpError(400, 'A planilha não contém materiais para importar.');
@@ -618,30 +624,39 @@ function validateImportedMaterials(body: unknown) {
     };
   });
 
-  return { name, materials };
+  return { enxovalId, materials };
 }
 
 async function importExcelForUser(userId: string, body: unknown) {
   const input = validateImportedMaterials(body);
   return withTransaction(async client => {
-    const enxovalId = randomUUID();
-    await client.query(`
-      INSERT INTO enxovais (id, name, owner_id)
-      VALUES ($1, $2, $3)
-    `, [enxovalId, input.name, userId]);
-    await client.query(`
-      INSERT INTO enxoval_members (enxoval_id, user_id, role)
-      VALUES ($1, $2, 'owner')
-    `, [enxovalId, userId]);
+    await requireEnxovalMember(client, userId, input.enxovalId);
 
-    const categories = new Map<string, EnxovalCategory>();
-    for (const [sortOrder, material] of input.materials.entries()) {
+    const currentCategories = await fetchCategories(client, userId, input.enxovalId);
+    const categories = new Map(currentCategories.map(category => [category.name.toLocaleLowerCase('pt-BR'), category]));
+    const existingItems = await client.query<{ name: string; category_id: string; sort_order: number }>(`
+      SELECT name, category_id, sort_order
+      FROM items
+      WHERE enxoval_id = $1
+    `, [input.enxovalId]);
+    const materialKey = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR');
+    const existingNames = new Set(existingItems.rows.map(item => materialKey(item.name)));
+    const nextOrderByCategory = new Map<string, number>();
+    for (const item of existingItems.rows) {
+      nextOrderByCategory.set(item.category_id, Math.max(nextOrderByCategory.get(item.category_id) ?? 0, item.sort_order + 1));
+    }
+
+    for (const material of input.materials) {
+      const nameKey = materialKey(material.name);
+      if (existingNames.has(nameKey)) continue;
+
       const categoryKey = material.categoryName.toLocaleLowerCase('pt-BR');
       let category = categories.get(categoryKey);
       if (!category) {
-        category = await findOrCreateCategory(client, userId, enxovalId, material.categoryName, categories.size);
+        category = await findOrCreateCategory(client, userId, input.enxovalId, material.categoryName, categories.size);
         categories.set(categoryKey, category);
       }
+      const sortOrder = nextOrderByCategory.get(category.id) ?? 0;
 
       await client.query(`
         INSERT INTO items (
@@ -650,15 +665,17 @@ async function importExcelForUser(userId: string, body: unknown) {
           estimated_min_unit_price_cents, estimated_max_unit_price_cents, checked, sort_order
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       `, [
-        randomUUID(), userId, enxovalId, category.id, material.name,
+        randomUUID(), userId, input.enxovalId, category.id, material.name,
         material.link, material.description, material.estimatedMinUnitPriceCents,
         material.plannedQuantity, material.acquiredQuantity,
         material.estimatedMinUnitPriceCents, material.estimatedMaxUnitPriceCents,
         material.acquiredQuantity >= material.plannedQuantity, sortOrder
       ]);
+      existingNames.add(nameKey);
+      nextOrderByCategory.set(category.id, sortOrder + 1);
     }
 
-    return fetchWorkspace(client, userId, enxovalId);
+    return fetchWorkspace(client, userId, input.enxovalId);
   });
 }
 
