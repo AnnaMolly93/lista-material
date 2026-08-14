@@ -4,7 +4,6 @@ import express, { Express, Request, Response } from 'express';
 import type { PoolClient } from 'pg';
 import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalMember, EnxovalSummary, EnxovalWorkspace } from '../src/types.ts';
 import { getPool, Queryable } from './database.ts';
-import { CIRURGIA_TEMPLATE } from './cirurgia-template.ts';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'enxoval_session';
@@ -553,53 +552,113 @@ async function createItemForUser(input: {
   });
 }
 
-function makeShoppingSearchLink(name: string) {
-  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(name)}`;
+interface ImportedMaterialInput {
+  name: string;
+  categoryName: string;
+  plannedQuantity: number;
+  acquiredQuantity: number;
+  estimatedMinUnitPriceCents: number | null;
+  estimatedMaxUnitPriceCents: number | null;
+  link: string;
+  description: string;
 }
 
-async function importCirurgiaForUser(userId: string) {
-  return withTransaction(async client => {
-    const existingImport = await client.query<{ enxoval_id: string }>(`
-      SELECT enxoval_id FROM material_imports
-      WHERE user_id = $1 AND import_key = 'cirurgia-sem-02-2026'
-    `, [userId]);
+function optionalText(value: unknown, maxLength: number) {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'string') throw new HttpError(400, 'Há um texto inválido na planilha.');
+  return value.trim().slice(0, maxLength);
+}
 
-    if (existingImport.rows[0]) {
-      return { workspace: await fetchWorkspace(client, userId, existingImport.rows[0].enxoval_id), imported: false };
+function optionalCents(value: unknown, fieldName: string) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new HttpError(400, `${fieldName} inválido na planilha.`);
+  }
+  return value;
+}
+
+function validateImportedMaterials(body: unknown) {
+  if (!body || typeof body !== 'object') throw new HttpError(400, 'Dados de importação inválidos.');
+  const input = body as Record<string, unknown>;
+  const name = requireText(input.name, 'Nome da matéria').slice(0, 120);
+
+  if (!Array.isArray(input.materials) || input.materials.length === 0) {
+    throw new HttpError(400, 'A planilha não contém materiais para importar.');
+  }
+  if (input.materials.length > 1000) throw new HttpError(400, 'A planilha pode ter no máximo 1.000 materiais.');
+
+  const materials: ImportedMaterialInput[] = input.materials.map((raw, index) => {
+    if (!raw || typeof raw !== 'object') throw new HttpError(400, `Material inválido na linha ${index + 2}.`);
+    const material = raw as Record<string, unknown>;
+    const materialName = requireText(material.name, `Material da linha ${index + 2}`).slice(0, 300);
+    const categoryName = optionalText(material.categoryName, 120) || 'Sem tipo';
+    const plannedQuantity = material.plannedQuantity;
+    const acquiredQuantity = material.acquiredQuantity;
+
+    if (typeof plannedQuantity !== 'number' || !Number.isInteger(plannedQuantity) || plannedQuantity < 1 || plannedQuantity > 10000) {
+      throw new HttpError(400, `Quantidade inválida para “${materialName}”.`);
+    }
+    if (typeof acquiredQuantity !== 'number' || !Number.isInteger(acquiredQuantity) || acquiredQuantity < 0 || acquiredQuantity > plannedQuantity) {
+      throw new HttpError(400, `Quantidade adquirida inválida para “${materialName}”.`);
     }
 
+    const min = optionalCents(material.estimatedMinUnitPriceCents, `Valor mínimo de “${materialName}”`);
+    const max = optionalCents(material.estimatedMaxUnitPriceCents, `Valor máximo de “${materialName}”`) ?? min;
+    if (min !== null && max !== null && min > max) throw new HttpError(400, `O valor mínimo de “${materialName}” é maior que o máximo.`);
+
+    return {
+      name: materialName,
+      categoryName,
+      plannedQuantity,
+      acquiredQuantity,
+      estimatedMinUnitPriceCents: min,
+      estimatedMaxUnitPriceCents: max,
+      link: optionalText(material.link, 2000),
+      description: optionalText(material.description, 2000)
+    };
+  });
+
+  return { name, materials };
+}
+
+async function importExcelForUser(userId: string, body: unknown) {
+  const input = validateImportedMaterials(body);
+  return withTransaction(async client => {
     const enxovalId = randomUUID();
     await client.query(`
       INSERT INTO enxovais (id, name, owner_id)
-      VALUES ($1, 'Cirurgia', $2)
-    `, [enxovalId, userId]);
+      VALUES ($1, $2, $3)
+    `, [enxovalId, input.name, userId]);
     await client.query(`
       INSERT INTO enxoval_members (enxoval_id, user_id, role)
       VALUES ($1, $2, 'owner')
     `, [enxovalId, userId]);
 
-    const category = await findOrCreateCategory(client, userId, enxovalId, 'Sem tipo', 0);
-    for (const [sortOrder, material] of CIRURGIA_TEMPLATE.entries()) {
+    const categories = new Map<string, EnxovalCategory>();
+    for (const [sortOrder, material] of input.materials.entries()) {
+      const categoryKey = material.categoryName.toLocaleLowerCase('pt-BR');
+      let category = categories.get(categoryKey);
+      if (!category) {
+        category = await findOrCreateCategory(client, userId, enxovalId, material.categoryName, categories.size);
+        categories.set(categoryKey, category);
+      }
+
       await client.query(`
         INSERT INTO items (
-          id, user_id, enxoval_id, category_id, name, link, price_cents,
+          id, user_id, enxoval_id, category_id, name, link, description, price_cents,
           planned_quantity, acquired_quantity,
           estimated_min_unit_price_cents, estimated_max_unit_price_cents, checked, sort_order
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, false, $11)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       `, [
         randomUUID(), userId, enxovalId, category.id, material.name,
-        material.link ?? makeShoppingSearchLink(material.name),
-        material.minUnitPriceCents, material.quantity,
-        material.minUnitPriceCents, material.maxUnitPriceCents, sortOrder
+        material.link, material.description, material.estimatedMinUnitPriceCents,
+        material.plannedQuantity, material.acquiredQuantity,
+        material.estimatedMinUnitPriceCents, material.estimatedMaxUnitPriceCents,
+        material.acquiredQuantity >= material.plannedQuantity, sortOrder
       ]);
     }
 
-    await client.query(`
-      INSERT INTO material_imports (user_id, import_key, enxoval_id)
-      VALUES ($1, 'cirurgia-sem-02-2026', $2)
-    `, [userId, enxovalId]);
-
-    return { workspace: await fetchWorkspace(client, userId, enxovalId), imported: true };
+    return fetchWorkspace(client, userId, enxovalId);
   });
 }
 
@@ -924,10 +983,9 @@ export function registerApiRoutes(app: Express) {
     res.status(204).end();
   }));
 
-  router.post('/imports/cirurgia', asyncHandler(async (req, res) => {
+  router.post('/imports/excel', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
-    const result = await importCirurgiaForUser(user.id);
-    res.status(result.imported ? 201 : 200).json(result.workspace);
+    res.status(201).json(await importExcelForUser(user.id, req.body));
   }));
 
   router.post('/enxovais/:id/members', asyncHandler(async (req, res) => {
