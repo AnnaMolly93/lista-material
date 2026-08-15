@@ -137,4 +137,11 @@ export function deleteItem(id: string) {
   return request<void>(`/api/items/${id}`, { method: 'DELETE' });
 }
 
+export function deleteItems(ids: string[]) {
+  return request<{ deletedCount: number }>('/api/items/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids })
+  });
+}
+
 export type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalMember, EnxovalWorkspace };

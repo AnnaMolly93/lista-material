@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ExternalLink, FileSpreadsheet, LogOut, Minus, Pencil, Plus, Trash2, Upload, WalletCards, X } from 'lucide-react';
+import { BookOpen, ExternalLink, FileSpreadsheet, ListChecks, LogOut, Minus, Pencil, Plus, Trash2, Upload, WalletCards, X } from 'lucide-react';
 import { readSheet } from 'read-excel-file/browser';
 import { parseMaterialRows, type ImportedMaterial } from './excel-import';
 import type { AuthUser, BootstrapData, EnxovalCategory, EnxovalItem, EnxovalSummary, EnxovalWorkspace } from './types';
@@ -9,6 +9,7 @@ import {
   createItem,
   deleteEnxoval,
   deleteItem,
+  deleteItems,
   fetchBootstrap,
   fetchEnxoval,
   importExcelMaterials,
@@ -158,6 +159,8 @@ export default function App() {
   const [material, setMaterial] = useState<MaterialForm>(blankMaterial);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(() => new Set());
   const [excelImport, setExcelImport] = useState<ExcelImportPreview | null>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
 
@@ -210,8 +213,34 @@ export default function App() {
     return !term ? items : items.filter(item => `${item.name} ${item.category}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(term));
   }, [items, search]);
 
+  const allFilteredSelected = filteredItems.length > 0 && filteredItems.every(item => selectedItemIds.has(item.id));
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    setSelectedItemIds(new Set());
+  }
+
+  function toggleItemSelection(id: string) {
+    setSelectedItemIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllFiltered() {
+    setSelectedItemIds(current => {
+      const next = new Set(current);
+      if (allFilteredSelected) filteredItems.forEach(item => next.delete(item.id));
+      else filteredItems.forEach(item => next.add(item.id));
+      return next;
+    });
+  }
+
   async function switchSubject(id: string) {
     if (!id || id === activeSubject?.id) return;
+    exitSelectionMode();
     setLoading(true);
     try { applyWorkspace(await fetchEnxoval(id)); } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível abrir a matéria.'); } finally { setLoading(false); }
   }
@@ -323,7 +352,36 @@ export default function App() {
 
   async function removeMaterial(item: EnxovalItem) {
     if (!window.confirm(`Remover “${item.name}”?`)) return;
-    try { await deleteItem(item.id); setItems(current => current.filter(currentItem => currentItem.id !== item.id)); } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível remover o material.'); }
+    try {
+      await deleteItem(item.id);
+      setItems(current => current.filter(currentItem => currentItem.id !== item.id));
+      setSelectedItemIds(current => { const next = new Set(current); next.delete(item.id); return next; });
+    } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível remover o material.'); }
+  }
+
+  async function removeSelectedMaterials() {
+    const ids = [...selectedItemIds];
+    if (ids.length === 0 || !window.confirm(`Excluir ${ids.length} ${ids.length === 1 ? 'material selecionado' : 'materiais selecionados'}?`)) return;
+    setSubmitting(true);
+    try {
+      await deleteItems(ids);
+      const selected = new Set(ids);
+      setItems(current => current.filter(item => !selected.has(item.id)));
+      exitSelectionMode();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível excluir os materiais selecionados.'); } finally { setSubmitting(false); }
+  }
+
+  async function removeActiveSubject() {
+    if (!activeSubject || activeSubject.role !== 'owner') return;
+    const itemLabel = items.length === 1 ? '1 material' : `${items.length} materiais`;
+    if (!window.confirm(`Excluir a matéria “${activeSubject.name}” e seus ${itemLabel}? Esta ação não pode ser desfeita.`)) return;
+    setSubmitting(true);
+    try {
+      await deleteEnxoval(activeSubject.id);
+      applyBootstrap(await fetchBootstrap());
+      exitSelectionMode();
+      setSearch('');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível excluir a matéria.'); } finally { setSubmitting(false); }
   }
 
   async function saveBudget(event: React.FormEvent) {
@@ -342,6 +400,7 @@ export default function App() {
   async function signOut() {
     await logout();
     setUser(null); setSubjects([]); setActiveSubject(null); setCategories([]); setItems([]);
+    exitSelectionMode();
   }
 
   if (loading && !user) return <main className="flex min-h-screen items-center justify-center bg-stone-50 text-stone-500"><Tooth size={42} className="animate-pulse text-brand-wood" /></main>;
@@ -360,10 +419,13 @@ export default function App() {
             <button type="button" onClick={() => void signOut()} className="inline-flex shrink-0 items-center gap-2 rounded-lg px-2 py-2 text-sm text-stone-500 hover:bg-stone-100 sm:px-3"><LogOut size={16} /><span className="hidden sm:inline">Sair</span></button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-5 sm:flex sm:flex-wrap sm:items-center">
-            <select value={activeSubject?.id ?? ''} onChange={event => void switchSubject(event.target.value)} className="col-span-2 w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm sm:w-auto sm:min-w-52 sm:py-2">
-              {subjects.length === 0 && <option value="">Nenhuma matéria</option>}
-              {subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
-            </select>
+            <div className="col-span-2 flex min-w-0 gap-2 sm:col-span-1">
+              <select value={activeSubject?.id ?? ''} onChange={event => void switchSubject(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm sm:min-w-52 sm:py-2">
+                {subjects.length === 0 && <option value="">Nenhuma matéria</option>}
+                {subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+              </select>
+              {activeSubject?.role === 'owner' && <button type="button" onClick={() => void removeActiveSubject()} disabled={submitting} aria-label="Excluir matéria" title="Excluir matéria" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"><Trash2 size={16} /><span className="hidden lg:inline">Excluir matéria</span></button>}
+            </div>
             <button type="button" onClick={() => setCreateSubjectOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-dark px-3 py-2.5 text-sm font-semibold text-white sm:py-2"><Plus size={16} /> Nova matéria</button>
             <input ref={excelInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event => void selectExcelFile(event)} className="sr-only" />
             <button type="button" onClick={() => excelInputRef.current?.click()} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-lg border border-brand-beige bg-white px-3 py-2.5 text-sm font-semibold text-brand-dark disabled:opacity-50 sm:py-2"><Upload size={16} /> Importar Excel</button>
@@ -392,25 +454,35 @@ export default function App() {
             <section className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
               <div className="border-b border-stone-100 p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div><h2 className="font-serif text-xl font-bold">Materiais</h2><p className="text-sm text-stone-500">{items.length} itens cadastrados</p></div>
-                  <button type="button" onClick={openNewMaterial} className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-brand-dark px-3 py-2.5 text-sm font-semibold text-white"><Plus size={16} /> Material</button>
+                  <div><h2 className="font-serif text-xl font-bold">Materiais</h2><p className="text-sm text-stone-500">{selectionMode ? `${selectedItemIds.size} selecionados` : `${items.length} itens cadastrados`}</p></div>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {selectionMode ? <>
+                      <button type="button" onClick={exitSelectionMode} className="rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm font-semibold text-stone-600">Cancelar</button>
+                      <button type="button" onClick={() => void removeSelectedMaterials()} disabled={submitting || selectedItemIds.size === 0} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-40"><Trash2 size={16} /> Excluir ({selectedItemIds.size})</button>
+                    </> : <>
+                      <button type="button" onClick={() => setSelectionMode(true)} disabled={items.length === 0} className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm font-semibold text-stone-600 disabled:opacity-40"><ListChecks size={16} /> Selecionar</button>
+                      <button type="button" onClick={openNewMaterial} className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-brand-dark px-3 py-2.5 text-sm font-semibold text-white"><Plus size={16} /> Material</button>
+                    </>}
+                  </div>
                 </div>
                 <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar material" className="input mt-3 sm:max-w-sm" />
+                {selectionMode && filteredItems.length > 0 && <button type="button" onClick={toggleAllFiltered} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-brand-dark"><span className={`inline-flex h-4 w-4 items-center justify-center rounded border text-[11px] ${allFilteredSelected ? 'border-stone-800 bg-stone-800 text-white' : 'border-stone-300 bg-white'}`}>{allFilteredSelected ? '✓' : ''}</span>{allFilteredSelected ? 'Desmarcar resultados visíveis' : `Selecionar todos os ${filteredItems.length} resultados visíveis`}</button>}
               </div>
 
               <div className="divide-y divide-stone-100 md:hidden">
                 {filteredItems.map(item => (
-                  <article key={item.id} className={`p-4 ${item.checked ? 'bg-emerald-50/50' : 'bg-white'}`}>
+                  <article key={item.id} className={`p-4 ${selectedItemIds.has(item.id) ? 'bg-brand-beige/15' : item.checked ? 'bg-emerald-50/50' : 'bg-white'}`}>
                     <div className="flex items-start justify-between gap-3">
+                      {selectionMode && <input type="checkbox" checked={selectedItemIds.has(item.id)} onChange={() => toggleItemSelection(item.id)} aria-label={`Selecionar ${item.name}`} className="mt-0.5 h-5 w-5 shrink-0 accent-stone-800" />}
                       <div className="min-w-0 flex-1">
                         <h3 className={`text-[15px] font-semibold leading-5 ${item.checked ? 'text-stone-400 line-through' : 'text-stone-900'}`}>{item.name}</h3>
                         {item.description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-stone-500">{item.description}</p>}
                       </div>
-                      <div className="flex shrink-0 gap-1">
+                      {!selectionMode && <div className="flex shrink-0 gap-1">
                         {item.link && <a href={item.link.startsWith('http') ? item.link : `https://${item.link}`} target="_blank" rel="noreferrer" aria-label="Abrir link" className="rounded-lg bg-stone-50 p-2 text-brand-wood"><ExternalLink size={17} /></a>}
                         <button type="button" onClick={() => openEditMaterial(item)} aria-label="Editar material" className="rounded-lg bg-stone-50 p-2 text-stone-500"><Pencil size={17} /></button>
                         <button type="button" onClick={() => void removeMaterial(item)} aria-label="Remover material" className="rounded-lg bg-red-50 p-2 text-red-600"><Trash2 size={17} /></button>
-                      </div>
+                      </div>}
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-stone-50 p-3">
                       <div><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Valor unitário</span><strong className="mt-1 block text-sm text-stone-700">{formatRange(itemMin(item), itemMax(item))}</strong></div>
@@ -429,9 +501,9 @@ export default function App() {
                 {filteredItems.length === 0 && <p className="px-4 py-12 text-center text-stone-500">Nenhum material encontrado.</p>}
               </div>
 
-              <div className="hidden overflow-x-auto md:block"><table className="min-w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-3">Material</th><th className="px-4 py-3 text-center">Quantidade</th><th className="px-4 py-3">Estimativa un.</th><th className="px-4 py-3">Total estimado</th><th className="px-4 py-3">Ações</th></tr></thead><tbody className="divide-y divide-stone-100">
-                {filteredItems.map(item => <tr key={item.id} className={item.checked ? 'bg-emerald-50/40' : ''}><td className="max-w-xs px-4 py-3 font-medium text-stone-800"><span className={item.checked ? 'line-through text-stone-400' : ''}>{item.name}</span>{item.description && <p className="mt-1 truncate text-xs font-normal text-stone-400">{item.description}</p>}</td><td className="px-4 py-3"><div className="flex items-center justify-center gap-2"><button type="button" aria-label="Diminuir quantidade adquirida" onClick={() => void changeAcquired(item, -1)} disabled={item.acquiredQuantity === 0} className="rounded-full border border-stone-200 p-1 text-stone-600 disabled:opacity-30"><Minus size={14} /></button><span className="min-w-10 text-center font-bold">{item.acquiredQuantity}/{item.plannedQuantity}</span><button type="button" aria-label="Adicionar quantidade adquirida" onClick={() => void changeAcquired(item, 1)} disabled={item.acquiredQuantity >= item.plannedQuantity} className="rounded-full bg-brand-wood p-1 text-white disabled:opacity-30"><Plus size={14} /></button></div></td><td className="px-4 py-3 text-stone-700">{formatRange(itemMin(item), itemMax(item))}</td><td className="px-4 py-3 font-semibold text-brand-dark">{formatRange(item.plannedQuantity * itemMin(item), item.plannedQuantity * itemMax(item))}</td><td className="px-4 py-3"><div className="flex gap-1">{item.link && <a href={item.link.startsWith('http') ? item.link : `https://${item.link}`} target="_blank" rel="noreferrer" className="rounded-md p-1.5 text-brand-wood hover:bg-brand-beige/20" title="Abrir link"><ExternalLink size={16} /></a>}<button onClick={() => openEditMaterial(item)} className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100" title="Editar"><Pencil size={16} /></button><button onClick={() => void removeMaterial(item)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" title="Remover"><Trash2 size={16} /></button></div></td></tr>)}
-                {filteredItems.length === 0 && <tr><td colSpan={5} className="px-4 py-12 text-center text-stone-500">Nenhum material encontrado.</td></tr>}
+              <div className="hidden overflow-x-auto md:block"><table className="min-w-full text-left text-sm"><thead className="bg-stone-50 text-xs uppercase tracking-wide text-stone-500"><tr>{selectionMode && <th className="w-10 px-4 py-3"><span className="sr-only">Selecionar</span></th>}<th className="px-4 py-3">Material</th><th className="px-4 py-3 text-center">Quantidade</th><th className="px-4 py-3">Estimativa un.</th><th className="px-4 py-3">Total estimado</th><th className="px-4 py-3">Ações</th></tr></thead><tbody className="divide-y divide-stone-100">
+                {filteredItems.map(item => <tr key={item.id} className={selectedItemIds.has(item.id) ? 'bg-brand-beige/15' : item.checked ? 'bg-emerald-50/40' : ''}>{selectionMode && <td className="px-4 py-3"><input type="checkbox" checked={selectedItemIds.has(item.id)} onChange={() => toggleItemSelection(item.id)} aria-label={`Selecionar ${item.name}`} className="h-5 w-5 accent-stone-800" /></td>}<td className="max-w-xs px-4 py-3 font-medium text-stone-800"><span className={item.checked ? 'line-through text-stone-400' : ''}>{item.name}</span>{item.description && <p className="mt-1 truncate text-xs font-normal text-stone-400">{item.description}</p>}</td><td className="px-4 py-3"><div className="flex items-center justify-center gap-2"><button type="button" aria-label="Diminuir quantidade adquirida" onClick={() => void changeAcquired(item, -1)} disabled={item.acquiredQuantity === 0} className="rounded-full border border-stone-200 p-1 text-stone-600 disabled:opacity-30"><Minus size={14} /></button><span className="min-w-10 text-center font-bold">{item.acquiredQuantity}/{item.plannedQuantity}</span><button type="button" aria-label="Adicionar quantidade adquirida" onClick={() => void changeAcquired(item, 1)} disabled={item.acquiredQuantity >= item.plannedQuantity} className="rounded-full bg-brand-wood p-1 text-white disabled:opacity-30"><Plus size={14} /></button></div></td><td className="px-4 py-3 text-stone-700">{formatRange(itemMin(item), itemMax(item))}</td><td className="px-4 py-3 font-semibold text-brand-dark">{formatRange(item.plannedQuantity * itemMin(item), item.plannedQuantity * itemMax(item))}</td><td className="px-4 py-3"><div className="flex gap-1">{item.link && <a href={item.link.startsWith('http') ? item.link : `https://${item.link}`} target="_blank" rel="noreferrer" className="rounded-md p-1.5 text-brand-wood hover:bg-brand-beige/20" title="Abrir link"><ExternalLink size={16} /></a>}<button onClick={() => openEditMaterial(item)} className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100" title="Editar"><Pencil size={16} /></button><button onClick={() => void removeMaterial(item)} className="rounded-md p-1.5 text-red-600 hover:bg-red-50" title="Remover"><Trash2 size={16} /></button></div></td></tr>)}
+                {filteredItems.length === 0 && <tr><td colSpan={selectionMode ? 6 : 5} className="px-4 py-12 text-center text-stone-500">Nenhum material encontrado.</td></tr>}
               </tbody></table></div>
             </section>
           </>
