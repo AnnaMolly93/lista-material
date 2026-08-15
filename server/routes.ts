@@ -1111,6 +1111,32 @@ export function registerApiRoutes(app: Express) {
     res.json(item);
   }));
 
+  router.post('/items/bulk-delete', asyncHandler(async (req, res) => {
+    const user = await requireCurrentUser(req);
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 1000) {
+      throw new HttpError(400, 'Selecione de 1 a 1.000 materiais para excluir.');
+    }
+
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.some(id => typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))) {
+      throw new HttpError(400, 'Há um material inválido na seleção.');
+    }
+
+    const result = await getPool().query<{ id: string }>(`
+      DELETE FROM items i
+      WHERE i.id = ANY($1::uuid[])
+        AND EXISTS (
+          SELECT 1
+          FROM enxoval_members em
+          WHERE em.enxoval_id = i.enxoval_id AND em.user_id = $2
+        )
+      RETURNING i.id
+    `, [uniqueIds, user.id]);
+
+    res.json({ deletedCount: result.rowCount ?? 0 });
+  }));
+
   router.delete('/items/:id', asyncHandler(async (req, res) => {
     const user = await requireCurrentUser(req);
     await deleteItemForUser(user.id, req.params.id);
